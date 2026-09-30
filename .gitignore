@@ -45,3 +45,6 @@ data/fallout_audit.csv
 !.env.example
 *.pem
 *.key
+
+# Generated DB export, not source
+data/kb_vector_db_export.xlsx
