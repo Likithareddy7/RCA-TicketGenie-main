@@ -607,3 +607,370 @@ def format_comment(rec: dict) -> str:
 
     lines += ["", f"Best historical match: {best.get('number', 'n/a')} ({int(best.get('similarity', 0)*100)}% similar)."]
     return "\n".join(lines)
+
+
+# ── free-text search ("Ticket Genie") ────────────────────────────────────────
+#
+# The queue path answers "what should I do about INC0010018?". This answers
+# "has anyone fixed something like this before?", the input is a typed
+# description, not a ticket.
+#
+# What deliberately does NOT run here:
+#   * the redirect pre-route and the validation tools, because both need a real
+#     ticket. The tools key on a BAN / Location ID / order id, and a typed
+#     sentence has none, so every verdict would be 'not_applicable', a card
+#     saying nothing. Search returns history only.
+#   * anything that writes. There is no incident to comment on.
+#
+# Relevance bands. `search()` always returns k hits ranked by similarity, even
+# when nothing is relevant, so an unfiltered "top 3" answers "what is the capital
+# of France" with three order-fallout tickets and invents steps for them. These
+# thresholds were set by measuring the real KB rather than guessed: genuine
+# in-domain queries land at 0.60-0.78, a weak but real one ("duplicate service at
+# the location") at 0.37, an unrelated one ("how to fix modem") at 0.35, and
+# nonsense at 0.10-0.23. Out-of-domain and weak-but-real therefore OVERLAP, and no
+# single cut separates them, hence three bands and an honest label on each result,
+# instead of one threshold pretending to be precise.
+SEARCH_MIN_SIM = 0.30      # below this: no usable match, and the LLM is not called
+SEARCH_PARTIAL_SIM = 0.45  # 0.30-0.45 reads as 'weak', 0.45-0.60 as 'partial'
+SEARCH_TOP_N = 3           # how many matches to return (retrieval still runs at k=5)
+
+# A query that is just an incident number is a request for the FULL pipeline on
+# that ticket, not a history search, the UI has one input for both.
+_TICKET_NUMBER = re.compile(r"^\s*((?:INC|inc)[0-9]{4,})\s*$")
+
+
+def looks_like_ticket_number(query: str) -> str:
+    """The incident number if the query is one, else ''."""
+    m = _TICKET_NUMBER.match(query or "")
+    return m.group(1).upper() if m else ""
+
+
+def _strength(sim: float) -> str:
+    if sim >= SIM_STRONG:
+        return "strong"
+    if sim >= SEARCH_PARTIAL_SIM:
+        return "partial"
+    return "weak"
+
+
+def _search_candidates(results: list) -> list:
+    """The matches shown for a search. Carries more of the record than the queue's
+    `_candidates()` does, because here the historical ticket IS the answer rather
+    than supporting evidence for a live one."""
+    out = []
+    for r in results:
+        meta = r["metadata"]
+        out.append({
+            "number": meta.get("number", ""),
+            "similarity": r["similarity"],
+            "strength": _strength(r["similarity"]),
+            "resolution_code": meta.get("resolution_code", ""),
+            "subcategory": meta.get("subcategory", ""),
+            "short_description": meta.get("short_description", ""),
+            "resolution": meta.get("resolution_notes", ""),
+            "state": meta.get("state", ""),
+        })
+    return out
+
+
+def _generate_search_resolution(query: str, top: list) -> dict:
+    """Consolidated resolution for a typed problem: each match's own steps plus a
+    merged summary. Mirrors _generate_resolution(), but prompted for a query with
+    no identifiers (see prompts.SEARCH_RESOLUTION_SYSTEM_PROMPT).
+
+    Falls back to quoting each ticket's OWN recorded close notes when the model is
+    unavailable, still grounded, still useful, and flagged `verbatim` so the UI
+    never presents a quote as tailored advice.
+    """
+    def _skeleton():
+        return [{"number": r["metadata"].get("number", ""),
+                 "similarity": r["similarity"],
+                 "resolution_code": r["metadata"].get("resolution_code", ""),
+                 "steps": _steps_from_notes(r["metadata"].get("resolution_notes", "")),
+                 "verbatim": True} for r in top]
+
+    if not top:
+        return {"per_ticket": [], "merged_summary": ""}
+
+    user_prompt = prompts.build_search_resolution_user_prompt(query, top)
+    try:
+        raw = _chat(prompts.SEARCH_RESOLUTION_SYSTEM_PROMPT, user_prompt,
+                    max_tokens=1200, temperature=0.2)
+        data = _parse_json(raw)
+        steps_by_num = {}
+        for pt in (data.get("per_ticket") or []):
+            num = str(pt.get("number", "")).strip()
+            steps_by_num[num] = [str(s).strip() for s in (pt.get("steps") or []) if str(s).strip()]
+        # Similarity and resolution code come from metadata, never from the model.
+        per_ticket = []
+        for r in top:
+            meta = r["metadata"]
+            num = meta.get("number", "")
+            per_ticket.append({"number": num, "similarity": r["similarity"],
+                               "resolution_code": meta.get("resolution_code", ""),
+                               "steps": steps_by_num.get(num, [])})
+        return {"per_ticket": per_ticket,
+                "merged_summary": str(data.get("merged_summary", "")).strip()}
+    except Exception as e:
+        print(f"[ENGINE] search resolution generation failed: {e}")
+        # `verbatim` tells the UI these are the resolving agents' own recorded words,
+        # not guidance written for this search, so it can say so rather than passing
+        # a quote off as tailored advice.
+        return {"per_ticket": _skeleton(), "merged_summary": "", "verbatim": True}
+
+
+def search_resolutions(query: str, k: int = 5) -> dict:
+    """Find the closest resolved tickets for a typed problem description.
+
+    Read-only: retrieves, then writes prose about what was already recorded. No
+    tool runs, no ticket is touched.
+    """
+    query = (query or "").strip()
+    if not query:
+        return {"mode": "search", "query": "", "error": "Enter a problem description to search."}
+
+    try:
+        results = fallout_store.search(query, k=max(k, SEARCH_TOP_N))
+    except Exception as e:
+        print(f"[ENGINE] search retrieval failed: {e}")
+        return {"mode": "search", "query": query,
+                "error": "The knowledge base is unavailable. Please try again."}
+
+    kb_size = fallout_store.count()
+    usable = [r for r in results if r["similarity"] >= SEARCH_MIN_SIM][:SEARCH_TOP_N]
+
+    # Nothing clears the floor: say so, and show the nearest miss WITH its real
+    # score so the answer is checkable. No LLM call, writing confident steps from
+    # history this distant is how a search tool starts inventing things.
+    if not usable:
+        near = _search_candidates(results[:1])
+        return {"mode": "search", "query": query, "no_match": True,
+                "kb_size": kb_size,
+                "top_similarity": results[0]["similarity"] if results else 0.0,
+                "match_strength": "none", "matches": [],
+                "near_miss": near[0] if near else None,
+                "resolution": {"per_ticket": [], "merged_summary": ""},
+                "message": ("No resolved ticket in the knowledge base is close enough to "
+                            "this description to base a resolution on.")}
+
+    resolution = _generate_search_resolution(query, usable)
+    top_sim = usable[0]["similarity"]
+    return {"mode": "search", "query": query, "no_match": False,
+            "kb_size": kb_size,
+            "top_similarity": top_sim,
+            "match_strength": _strength(top_sim),
+            "matches": _search_candidates(usable),
+            "resolution": resolution,
+            "message": ""}
+
+
+# ── customer conversation ("Ticket Genie" chat) ──────────────────────────────
+#
+# A conversation, not a search box. The customer describes a problem in their own
+# words, gets steps to try, and is offered a ticket or a rep when the steps run out.
+#
+# The CONTROL FLOW here is deterministic and the model only writes prose, which is
+# the same split the rest of this app uses. Intent comes from the quick-reply the
+# customer pressed, not from asking a model to interpret free text, so "these steps
+# worked" can never be misread as "I am stuck" and the conversation cannot be
+# derailed by an LLM outage. Free text is always treated as describing a problem,
+# which is the safe default: the worst case is that we retrieve and offer help again.
+#
+# Stages the client renders:
+#   troubleshoot   steps were found, ask whether they worked
+#   no_match       nothing close enough in the KB, offer a ticket or a rep
+#   escalate       the customer is stuck or needs our side to act
+#   resolved       the customer confirmed it is fixed, conversation closed
+#   ticket_draft   a ticket was drafted. NOTHING was sent to ServiceNow
+#   rep            hand off to a human rep
+#   ticket_lookup  an incident number was typed, return the full agent pipeline
+
+CHAT_ACTIONS = ("worked", "stuck", "open_ticket", "talk_to_rep")
+
+# Offered after steps, and after an escalation. Deterministic per stage, so the
+# buttons and the stage can never disagree.
+_QR_AFTER_STEPS = [{"label": "That fixed it", "action": "worked"},
+                   {"label": "I am stuck on a step", "action": "stuck"}]
+_QR_ESCALATE = [{"label": "Open a ticket for me", "action": "open_ticket"},
+                {"label": "Talk to a representative", "action": "talk_to_rep"}]
+
+
+def _turn(stage, reply, steps=None, quick_replies=None, **extra) -> dict:
+    out = {"stage": stage, "reply": reply, "steps": steps or [],
+           "quick_replies": quick_replies or [], "needs_engineer": False,
+           "sources_count": 0, "match_strength": "none", "ticket_draft": None}
+    out.update(extra)
+    return out
+
+
+def _last_user_message(messages: list) -> str:
+    for m in reversed(messages or []):
+        if m.get("role") == "user" and str(m.get("content", "")).strip():
+            return str(m["content"]).strip()
+    return ""
+
+
+def _retrieval_query(messages: list) -> str:
+    """What to search on.
+
+    A follow-up is often too short to retrieve on by itself ("still broken"), so a
+    short latest message is combined with the first thing the customer said, which
+    is where the actual problem description lives.
+    """
+    last = _last_user_message(messages)
+    firsts = [str(m.get("content", "")).strip() for m in (messages or [])
+              if m.get("role") == "user" and str(m.get("content", "")).strip()]
+    first = firsts[0] if firsts else ""
+    if first and first != last and len(last.split()) < 6:
+        return f"{first} {last}"
+    return last
+
+
+def _draft_ticket(messages: list) -> dict:
+    """Build a ticket draft from the conversation.
+
+    Deliberately NOT written to ServiceNow. This app's write surface is exactly two
+    operations (post_comment and reassign), and creating incidents would be a third,
+    which is a product decision rather than an implementation detail. So the draft is
+    returned for a human to submit and the response says plainly that nothing was
+    filed.
+    """
+    said = [str(m.get("content", "")).strip() for m in (messages or [])
+            if m.get("role") == "user" and str(m.get("content", "")).strip()]
+    summary = said[0] if said else "Customer-reported issue"
+    transcript = "\n".join(f"Customer: {s}" for s in said)
+    return {
+        "short_description": summary[:160],
+        "description": ("Raised from a customer self-service conversation.\n\n"
+                        f"{transcript}"),
+        "submitted": False,
+        "note": ("This is a draft only. Nothing has been created in ServiceNow. "
+                 "An agent must review and submit it."),
+    }
+
+
+def _customer_steps(question: str, messages: list, results: list) -> dict:
+    """Translate internal resolutions into customer-safe steps.
+
+    There is deliberately NO verbatim fallback here, unlike the agent-facing paths.
+    Quoting an engineer's close notes to a subscriber would leak internal system
+    names and other customers' identifiers, and would tell them to do things only an
+    employee can do. When the model is unavailable the honest answer is no steps,
+    which routes the conversation to a ticket or a rep.
+    """
+    user_prompt = prompts.build_customer_chat_user_prompt(question, messages, results)
+    try:
+        raw = _chat(prompts.CUSTOMER_CHAT_SYSTEM_PROMPT, user_prompt,
+                    max_tokens=900, temperature=0.3)
+        data = _parse_json(raw)
+        steps = []
+        for s in (data.get("steps") or []):
+            text = str(s.get("text", "")).strip() if isinstance(s, dict) else str(s).strip()
+            if text:
+                steps.append({"text": text,
+                              "needs_engineer": bool(s.get("needs_engineer")) if isinstance(s, dict) else False})
+        return {"reply": str(data.get("reply", "")).strip(),
+                "steps": steps[:5],
+                "needs_engineer": bool(data.get("needs_engineer_overall")),
+                "closing_question": str(data.get("closing_question", "")).strip(),
+                "ai_available": True}
+    except Exception as e:
+        print(f"[CHAT] customer step generation unavailable: {e}")
+        return {"reply": "", "steps": [], "needs_engineer": True,
+                "closing_question": "", "ai_available": False}
+
+
+def chat_turn(messages: list, action: str = "") -> dict:
+    """One assistant turn. Stateless: the client sends the whole conversation.
+
+    Read-only. Nothing in this path writes to ServiceNow.
+    """
+    messages = messages or []
+    action = (action or "").strip()
+
+    if action == "worked":
+        return _turn("resolved",
+                     "That is great to hear. I will close this off here. If the problem "
+                     "comes back, just start a new message and we will pick it up again.")
+
+    if action == "talk_to_rep":
+        return _turn("rep",
+                     "No problem. I will pass you to a representative who can pick this up "
+                     "with you directly. Please hold while I connect you.",
+                     handoff=True)
+
+    if action == "open_ticket":
+        draft = _draft_ticket(messages)
+        return _turn("ticket_draft",
+                     "I have put together a summary of the problem for our support team. "
+                     "One of our agents will review it and get in touch.",
+                     quick_replies=[{"label": "Talk to a representative", "action": "talk_to_rep"}],
+                     ticket_draft=draft)
+
+    if action == "stuck":
+        return _turn("escalate",
+                     "Thanks for trying those. This one looks like it needs someone on our "
+                     "side to take a proper look at your account. I can raise it with our "
+                     "support team, or put you through to a representative now.",
+                     quick_replies=_QR_ESCALATE, needs_engineer=True)
+
+    question = _last_user_message(messages)
+    if not question:
+        return _turn("no_match", "Tell me what is going wrong and I will see what I can find.")
+
+    # An incident number is an internal power path, not something a customer types.
+    # It returns the full agent pipeline so the comment and reassign flows stay
+    # reachable from the one input.
+    number = looks_like_ticket_number(question)
+    if number:
+        rec = recommend(number)
+        rec["stage"] = "ticket_lookup"
+        rec["mode"] = "ticket"
+        return rec
+
+    try:
+        results = fallout_store.search(_retrieval_query(messages), k=5)
+    except Exception as e:
+        print(f"[CHAT] retrieval failed: {e}")
+        results = []
+
+    usable = [r for r in results if r["similarity"] >= SEARCH_MIN_SIM][:SEARCH_TOP_N]
+    if not usable:
+        return _turn("no_match",
+                     "I could not find anything in our records that matches this closely "
+                     "enough for me to suggest a reliable fix. I would rather get it in front "
+                     "of someone who can look at your account properly than guess. I can raise "
+                     "a ticket for you, or connect you to a representative.",
+                     quick_replies=_QR_ESCALATE,
+                     top_similarity=results[0]["similarity"] if results else 0.0)
+
+    gen = _customer_steps(question, messages, usable)
+    top_sim = usable[0]["similarity"]
+
+    # Steps were found: present them and ask whether they worked.
+    if gen["steps"]:
+        reply = gen["reply"] or "Here is what has resolved this for other customers."
+        if gen["closing_question"]:
+            reply = f"{reply}\n\n{gen['closing_question']}"
+        return _turn("troubleshoot", reply, steps=gen["steps"],
+                     quick_replies=_QR_AFTER_STEPS,
+                     needs_engineer=gen["needs_engineer"],
+                     sources_count=len(usable),
+                     match_strength=_strength(top_sim),
+                     top_similarity=top_sim,
+                     ai_available=gen["ai_available"])
+
+    # Matches exist but nothing the customer can do themselves, or the model is
+    # unavailable and we will not quote internal notes at a customer.
+    reply = gen["reply"] or (
+        "I can see we have handled problems like this before, but it is not something "
+        "you can fix from your end. It needs one of our team to make a change for you. "
+        "I can raise a ticket, or put you through to a representative."
+        if gen["ai_available"] else
+        "I found similar cases in our records, but I am not able to write them up for you "
+        "right now. Rather than guess, let me get this to someone who can help properly. "
+        "I can raise a ticket, or connect you to a representative.")
+    return _turn("escalate", reply, quick_replies=_QR_ESCALATE, needs_engineer=True,
+                 sources_count=len(usable), match_strength=_strength(top_sim),
+                 top_similarity=top_sim, ai_available=gen["ai_available"])
