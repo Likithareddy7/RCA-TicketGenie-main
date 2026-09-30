@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────────────────────
+# TicketGenie — Backend dependencies
+# Install with:  pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────
+
+# Web framework + ASGI server
+fastapi
+uvicorn[standard]
+
+# AI / LLM stack
+anthropic                 # Claude — every LLM call in fallout_engine
+openai                    # optional; only the vestigial /transcribe endpoint
+
+# Vector store + hybrid search
+chromadb                  # persistent vector database
+onnxruntime               # runs all-MiniLM-L6-v2 LOCALLY for embeddings (no API key)
+rank_bm25                 # BM25 keyword search (fused with semantic search)
+
+# MCP — exposes the validation checks as MCP tools (mcp_server.py)
+mcp                       # Model Context Protocol server/client SDK (FastMCP)
+
+# Data + utilities
+pandas                    # incidents spreadsheet (KB source) + watchlist CSV handling
+openpyxl                  # .xlsx reader used by pandas.read_excel (kb_source.py)
+requests                  # ServiceNow REST API calls
+python-dotenv             # loads backend/.env
+truststore                # trust the OS cert store (corporate proxy / SSL inspection)

@@ -1,0 +1,153 @@
+{
+  "_description": "Synthetic BOSS/OMS inventory backing the value-checks, generated alongside data/synthetic_open_queue.json by backend/make_synthetic_queue.py. Every identifier is fabricated. Read fresh on every call (backend/oms_store.py).",
+  "_how_checks_use_it": "Each check compares two values that are SUPPOSED to agree (account status vs its orders, banner vs provisioned network type, order stage vs whether it reflects on the account) and reports which one is wrong. Nothing is written back.",
+  "accounts": {
+    "907431182": {
+      "ban": "907431182",
+      "account_status": "Active",
+      "network_type": "Fiber",
+      "banner": "Fiber",
+      "_note": "Buy Flow ticket's BAN — OMS is healthy; the defect is upstream."
+    },
+    "913560447": {
+      "ban": "913560447",
+      "account_status": "Active",
+      "network_type": "Fiber",
+      "banner": "Fiber"
+    },
+    "928104663": {
+      "ban": "928104663",
+      "account_status": "Active",
+      "network_type": "Copper",
+      "banner": "Copper"
+    },
+    "934778215": {
+      "ban": "934778215",
+      "account_status": "Active",
+      "network_type": "Fiber",
+      "banner": "Fiber"
+    },
+    "941025590": {
+      "ban": "941025590",
+      "account_status": "Active",
+      "network_type": "Fiber",
+      "banner": "Fiber"
+    },
+    "952330871": {
+      "ban": "952330871",
+      "account_status": "Active",
+      "network_type": "Copper",
+      "banner": "Postpaid Fiber",
+      "_note": "Banner disagrees with network_type -> Network Type Issue."
+    },
+    "963118204": {
+      "ban": "963118204",
+      "account_status": "Inactive",
+      "network_type": "Copper",
+      "banner": "Copper",
+      "_note": "Inactive with NO disconnect order on file -> should be Active."
+    },
+    "974602339": {
+      "ban": "974602339",
+      "account_status": "Active",
+      "network_type": "Fiber",
+      "banner": "Fiber"
+    },
+    "985447016": {
+      "ban": "985447016",
+      "account_status": "Pending",
+      "network_type": "Fiber",
+      "banner": "Fiber",
+      "_note": "Order cancelled but the account never left Pending."
+    },
+    "996215483": {
+      "ban": "996215483",
+      "account_status": "Pending",
+      "network_type": "Fiber",
+      "banner": "Fiber"
+    }
+  },
+  "orders": {
+    "WI9613002247": {
+      "order_id": "WI9613002247",
+      "ban": "974602339",
+      "order_type": "Change",
+      "order_status": "Staged",
+      "reflected_on_account": false,
+      "stage": "Staging",
+      "open_tasks": [],
+      "_note": "Classic Staging Stuck: order exists but never surfaced on the account."
+    },
+    "NC9722034398": {
+      "order_id": "NC9722034398",
+      "ban": "985447016",
+      "order_type": "Disconnect",
+      "order_status": "Cancelled",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    },
+    "OH9831082966": {
+      "order_id": "OH9831082966",
+      "ban": "996215483",
+      "order_type": "Add",
+      "order_status": "InProgress",
+      "reflected_on_account": true,
+      "stage": "Order Completion",
+      "open_tasks": [
+        {
+          "task_id": "OMTASK930632918",
+          "description": "Wait for Job Completion",
+          "status": "Open",
+          "blocking": true
+        }
+      ],
+      "_note": "Past due with a blocking task -> Task Closure."
+    },
+    "NC9204118337": {
+      "order_id": "NC9204118337",
+      "ban": "907431182",
+      "order_type": "Change",
+      "order_status": "Completed",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    },
+    "TN9118004552": {
+      "order_id": "TN9118004552",
+      "ban": "913560447",
+      "order_type": "Change",
+      "order_status": "Completed",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    },
+    "SC9330076104": {
+      "order_id": "SC9330076104",
+      "ban": "928104663",
+      "order_type": "Change",
+      "order_status": "Completed",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    },
+    "OH9412007733": {
+      "order_id": "OH9412007733",
+      "ban": "934778215",
+      "order_type": "Change",
+      "order_status": "Completed",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    },
+    "LA9507113028": {
+      "order_id": "LA9507113028",
+      "ban": "941025590",
+      "order_type": "Add",
+      "order_status": "Completed",
+      "reflected_on_account": true,
+      "stage": "Closed",
+      "open_tasks": []
+    }
+  }
+}

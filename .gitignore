@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+# in-repo virtualenv — never commit
+rca/
+
+# Environment
+.env
+
+# ChromaDB local storage
+data/chroma_db/
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# ── Real customer data — NEVER commit ───────────────────────────────────
+# The live incidents export and anything derived from it carry real customer
+# names, addresses, telephone numbers and account numbers (429 real BANs in the
+# export alone). The synthetic equivalents below are committed instead; regenerate
+# them with backend/make_synthetic_data.py and make_synthetic_queue.py.
+data/closed tickets.xlsx
+data/fake_tickets.backup.json
+data/watchlist.csv
+Comcast_RCA_Final_Dataset.csv
+
+# Runtime output, not source
+data/fallout_audit.csv
+
+# Secrets — belt and braces alongside the `.env` rule above
+.env.*
+!.env.example
+*.pem
+*.key

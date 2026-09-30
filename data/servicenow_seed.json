@@ -1,0 +1,94 @@
+{
+  "exported_from": "https://dev371628.service-now.com",
+  "count": 11,
+  "tickets": [
+    {
+      "number": "INC0010038",
+      "short_description": "Fallout - customer order CO-880001 blocked by duplicate service validation at Location ID LOC-482910.",
+      "state_display": "New",
+      "state_value": "1",
+      "is_closed": false,
+      "block": "Subcategory: Duplicate Service Validation\nLocation ID: LOC-482910\nCustomer Order: CO-880001\nTN: (214) 555-0101\nService Type: Fiber Internet - 1 Gbps\nDescription:\nFallout - customer order CO-880001 blocked by duplicate service validation at Location ID LOC-482910.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition."
+    },
+    {
+      "number": "INC0010039",
+      "short_description": "Fallout - customer order CO-880002 blocked by duplicate service validation at Location ID LOC-483027.",
+      "state_display": "New",
+      "state_value": "1",
+      "is_closed": false,
+      "block": "Subcategory: Duplicate Service Validation\nLocation ID: LOC-483027\nCustomer Order: CO-880002\nTN: (214) 555-0102\nService Type: Fiber Internet - 500 Mbps\nDescription:\nFallout - customer order CO-880002 blocked by duplicate service validation at Location ID LOC-483027.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition."
+    },
+    {
+      "number": "INC0010040",
+      "short_description": "Fallout - provisioning request PR-880003 blocked by duplicate service validation at Location ID LOC-483104.",
+      "state_display": "New",
+      "state_value": "1",
+      "is_closed": false,
+      "block": "Subcategory: Provisioning Request - Duplicate Block\nLocation ID: LOC-483104\nProvisioning Request: PR-880003\nTN: (214) 555-0103\nService Type: Fiber Internet - 200 Mbps\nDescription:\nFallout - provisioning request PR-880003 blocked by duplicate service validation at Location ID LOC-483104.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition."
+    },
+    {
+      "number": "INC0010041",
+      "short_description": "Fallout - customer order CO-770001 blocked by duplicate service validation at Location ID LOC-482910.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "Subcategory: Duplicate Service Validation\nLocation ID: LOC-482910\nCustomer Order: CO-770001\nTN: (214) 555-0101\nService Type: Fiber Internet - 1 Gbps\nResolution Code: Service Already Provisioned - Duplicate Order Cancelled\nDescription:\nFallout - customer order CO-770001 blocked by duplicate service validation at Location ID LOC-482910.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition.\nResolution Notes:\nProvisioning confirmed an existing active service (SVC-100201) in good standing at LOC-482910. Order Management cancelled the duplicate order CO-770001. No field dispatch was required. Service Agent notified the customer that existing service is unaffected."
+    },
+    {
+      "number": "INC0010042",
+      "short_description": "Fallout - customer order CO-770002 blocked by duplicate service validation at Location ID LOC-483027.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "Subcategory: Duplicate Service Validation\nLocation ID: LOC-483027\nCustomer Order: CO-770002\nTN: (214) 555-0102\nService Type: Fiber Internet - 500 Mbps\nResolution Code: Service Already Provisioned - Duplicate Order Cancelled\nDescription:\nFallout - customer order CO-770002 blocked by duplicate service validation at Location ID LOC-483027.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition.\nResolution Notes:\nProvisioning confirmed active service (SVC-100284) at LOC-483027. Order Management withdrew the duplicate order CO-770002; no provisioning steps were initiated and no dispatch required. Service Agent confirmed to the customer that service continues normally."
+    },
+    {
+      "number": "INC0010043",
+      "short_description": "Fallout - provisioning request PR-770003 blocked by duplicate service validation at Location ID LOC-483104.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "Subcategory: Provisioning Request - Duplicate Block\nLocation ID: LOC-483104\nProvisioning Request: PR-770003\nTN: (214) 555-0103\nService Type: Fiber Internet - 200 Mbps\nResolution Code: Service Already Provisioned - Duplicate Order Cancelled\nDescription:\nFallout - provisioning request PR-770003 blocked by duplicate service validation at Location ID LOC-483104.\nWork Notes:\nAuto-flagged by OMS duplicate service validation; order suspended. Awaiting agent disposition.\nResolution Notes:\nProvisioning confirmed active service (SVC-100347) at LOC-483104. The duplicate provisioning request PR-770003 was cancelled and no field dispatch was scheduled. Service Agent informed the customer that existing service is active."
+    },
+    {
+      "number": "INC0010044",
+      "short_description": "Fallout - number port-in for TN (972) 555-0288 stuck past its FOC date and not activated.",
+      "state_display": "New",
+      "state_value": "1",
+      "is_closed": false,
+      "block": "2026-07-01 12:24:32 - Ayush Singh (Comments)\nSubcategory: Number Porting\nPort Request: LSR-560777\nTN: (972) 555-0288\nService Type: Voice - Local Number Port\nDescription:\nFallout - number port-in for TN (972) 555-0288 stuck past its FOC date and not activated.\nWork Notes:\nAuto-flagged by the porting fallout monitor. Awaiting agent disposition."
+    },
+    {
+      "number": "INC0010045",
+      "short_description": "Fallout - customer reports TN (469) 555-0288 stopped working and the number is no longer active on our network.",
+      "state_display": "New",
+      "state_value": "1",
+      "is_closed": false,
+      "block": "2026-07-01 12:24:48 - Ayush Singh (Comments)\nSubcategory: Number Porting\nPort Request: LSR-560999\nTN: (469) 555-0288\nService Type: Voice - Local Number Port\nDescription:\nFallout - customer reports TN (469) 555-0288 stopped working and the number is no longer active on our network.\nWork Notes:\nAuto-flagged by the porting fallout monitor. Awaiting agent disposition."
+    },
+    {
+      "number": "INC0010046",
+      "short_description": "Fallout - number port-in for TN (972) 555-0111 stuck past its FOC date and not activated.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "2026-07-01 12:25:00 - Ayush Singh (Comments)\nSubcategory: Number Porting\nPort Request: LSR-556001\nTN: (972) 555-0111\nService Type: Voice - Local Number Port\nResolution Code: Port Completed - LSR Resubmitted\nDescription:\nFallout - number port-in for TN (972) 555-0111 stuck past its FOC date and not activated.\nWork Notes:\nAuto-flagged by the porting fallout monitor. Awaiting agent disposition.\nResolution Notes:\nThe losing carrier rejected the LSR because the customer name and service address did not match the CSR on file. Order Management pulled a fresh CSR, corrected the details, and resubmitted the LSR. A new FOC date was issued and the number ported. No dispatch required. Service Agent confirmed the transfer to the customer."
+    },
+    {
+      "number": "INC0010047",
+      "short_description": "Fallout - number port-in for TN (214) 555-0177 rejected by the losing carrier and not activated.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "2026-07-01 12:25:38 - Ayush Singh (Comments)\nSubcategory: Number Porting\nPort Request: LSR-556044\nTN: (214) 555-0177\nService Type: Voice - Local Number Port\nResolution Code: Port Completed - Account Corrected\nDescription:\nFallout - number port-in for TN (214) 555-0177 rejected by the losing carrier and not activated.\nWork Notes:\nAuto-flagged by the porting fallout monitor. Awaiting agent disposition.\nResolution Notes:\nThe rejection reason was an incorrect account number and porting PIN on the LSR. Order Management obtained the correct account number and PIN from the customer, updated and resubmitted the port request. The carrier issued a FOC and the number ported. Service Assurance verified calling. Service Agent informed the customer the port completed."
+    },
+    {
+      "number": "INC0010048",
+      "short_description": "Fallout - TN (469) 555-0102 lost service and the number is no longer active on our network.",
+      "state_display": "Closed",
+      "state_value": "7",
+      "is_closed": true,
+      "block": "2026-07-01 12:26:01 - Ayush Singh (Comments)\nSubcategory: Number Porting\nPort Request: LSR-559120\nTN: (469) 555-0102\nService Type: Voice - Local Number Port\nResolution Code: Port Recovered - Port-Out Rejected\nDescription:\nFallout - TN (469) 555-0102 lost service and the number is no longer active on our network.\nWork Notes:\nAuto-flagged by the porting fallout monitor. Awaiting agent disposition.\nResolution Notes:\nThe number had been ported out to another carrier without valid authorization. Order Management filed a port-out rejection/recovery (snap-back) with the winning carrier and recovered the number. Network Operations re-provisioned it on the original switch translations and Service Assurance confirmed the line was live. Service Agent confirmed restoration and advised adding a port-out PIN."
+    }
+  ]
+}

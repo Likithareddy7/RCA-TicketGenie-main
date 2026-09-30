@@ -1,0 +1,30 @@
+{
+  "_description": "How the incidents spreadsheet's columns map onto KB fields. backend/kb_source.py auto-detects by alias; anything set here wins. Values are the EXACT header text from the sheet. Leave a key empty to fall back to auto-detection (also the right thing when the sheet has no such column). If an override names a header the sheet doesn't have, kb_source logs a warning and falls back to auto-detection rather than failing.",
+  "_how_to_check": "Run `python kb_source.py` from backend/, or GET http://localhost:8000/fallout/kb-source, to see which header each field resolved to and how many rows counted as closed.",
+  "_embedded_fields": "Only short_description + description + subcategory + service_type are embedded (problem-side). resolution_notes / resolution_code are metadata and used AFTER retrieval — never embedded.",
+
+  "_note_subcategory": "Deliberately u_issue_type, NOT category. subcategory is embedded, so it must carry the discriminative fallout type ('Staging Stuck', 'Account Status Mismatch'), not the coarse application bucket ('Contact Center Applications') that nearly every row shares. category is kept separately as non-embedded metadata.",
+  "_note_resolution_code": "This export has no resolution-code column. kb_source extracts the {RCA TAG : ...} written into close_notes instead — that tag is the de-facto resolution code and is what the pipeline groups on.",
+  "_note_identifiers": "BAN, order id (e.g. WI2100002247) and OMTASK ids have no columns either; they are written inline in the description/close notes and are recovered by regex in kb_source._row_to_ticket.",
+
+  "number": "number",
+  "state": "state",
+  "short_description": "short_description",
+  "description": "description",
+  "subcategory": "u_issue_type",
+  "category": "category",
+  "resolution_notes": "close_notes",
+  "work_notes": "comments_and_work_notes",
+
+  "service_type": "",
+  "location_id": "",
+  "ban": "",
+  "tn": "",
+  "order_ref": "",
+  "order_type": "",
+  "task_ref": "",
+  "resolution_code": "",
+  "root_cause": "",
+  "referenced_service_id": "",
+  "updated": ""
+}

@@ -1,0 +1,48 @@
+{
+  "_description": "Provisioning / OMS inventory used by the remediation engine to validate whether a Location ID already has an active service before recommending a fallout resolution. This is the live source of truth for the value-check; edit here to change what the engine sees.",
+  "active_services": {
+    "LOC-482910": {
+      "location_id": "LOC-482910",
+      "service_id": "SVC-100201",
+      "service_type": "Fiber Internet - 1 Gbps",
+      "telephone_number": "(214) 555-0101",
+      "status": "Active",
+      "standing": "Good Standing",
+      "pending_disconnect": false,
+      "activated_on": "2025-11-14"
+    },
+    "LOC-483027": {
+      "location_id": "LOC-483027",
+      "service_id": "SVC-100284",
+      "service_type": "Fiber Internet - 500 Mbps",
+      "telephone_number": "(214) 555-0102",
+      "status": "Active",
+      "standing": "Good Standing",
+      "pending_disconnect": false,
+      "activated_on": "2025-12-02"
+    },
+    "LOC-483104": {
+      "location_id": "LOC-483104",
+      "service_id": "SVC-100347",
+      "service_type": "Fiber Internet - 200 Mbps",
+      "telephone_number": "(214) 555-0103",
+      "status": "Active",
+      "standing": "Good Standing",
+      "pending_disconnect": false,
+      "activated_on": "2026-01-09",
+      "_note": "service_id assigned by us (SVC-100347) — the source ticket INC0010026 did not name an SVC id."
+    }
+  },
+  "orders": [
+    { "order_id": "CO-772341", "order_type": "Customer Order",       "location_id": "LOC-482910", "telephone_number": "(214) 555-0101", "service_type": "Fiber Internet - 1 Gbps",   "ticket": "INC0010023", "status": "Cancelled - Duplicate" },
+    { "order_id": "CO-772489", "order_type": "Customer Order",       "location_id": "LOC-483027", "telephone_number": "(214) 555-0102", "service_type": "Fiber Internet - 500 Mbps", "ticket": "INC0010024", "status": "Cancelled - Duplicate" },
+    { "order_id": "PR-518847", "order_type": "Provisioning Request", "location_id": "LOC-483104", "telephone_number": "(214) 555-0103", "service_type": "Fiber Internet - 200 Mbps", "ticket": "INC0010026", "status": "Cancelled - Duplicate" },
+    { "order_id": "DR-309112", "order_type": "Dispatch Request",     "location_id": "LOC-482910", "telephone_number": "(214) 555-0104", "service_type": "Fiber Internet - 1 Gbps",   "ticket": "INC0010027", "status": "Cancelled - Duplicate" },
+    { "order_id": "CO-773801", "order_type": "Customer Order",       "location_id": "LOC-482910", "telephone_number": "(214) 555-0105", "service_type": "Fiber Internet - 1 Gbps",   "ticket": "INC0010028", "status": "Pending Validation" },
+    { "order_id": "PR-519204", "order_type": "Provisioning Request", "location_id": "LOC-483027", "telephone_number": "(214) 555-0106", "service_type": "Fiber Internet - 500 Mbps", "ticket": "INC0010029", "status": "Pending Validation" },
+    { "order_id": "DR-309445", "order_type": "Dispatch Request",     "location_id": "LOC-483104", "telephone_number": "(214) 555-0107", "service_type": "Fiber Internet - 200 Mbps", "ticket": "INC0010030", "status": "Pending Validation" },
+    { "order_id": "CO-773966", "order_type": "Customer Order",       "location_id": "LOC-482910", "telephone_number": "(214) 555-0108", "service_type": "Fiber Internet - 1 Gbps",   "ticket": "INC0010031", "status": "Pending Validation" },
+    { "order_id": "CO-774110", "order_type": "Customer Order",       "location_id": "LOC-483027", "telephone_number": "(214) 555-0109", "service_type": "Fiber Internet - 500 Mbps", "ticket": "INC0010032", "status": "Pending Validation" },
+    { "order_id": "CO-774287", "order_type": "Customer Order",       "location_id": "LOC-483104", "telephone_number": "(214) 555-0110", "service_type": "Fiber Internet - 200 Mbps", "ticket": "INC0010033", "status": "Pending Validation" }
+  ]
+}

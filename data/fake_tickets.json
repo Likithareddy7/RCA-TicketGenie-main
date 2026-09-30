@@ -1,0 +1,106 @@
+{
+  "_description": "Local demo queue — the synthetic tickets from data/synthetic_open_queue.json, used when ServiceNow is unavailable. `opened` is spread across the age bands so the priority colouring is visible. Original file: fake_tickets.backup.json",
+  "enabled": true,
+  "tickets": [
+    {
+      "number": "INC0010018",
+      "short_description": "Remove TN (704) 555-2118 on BAN 907431182 and replace with TN (704) 555-2119",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Digital Buyflow\nBusiness Service: BOSS AX Buyflow\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 907431182\nTN: (704) 555-2118\nOrder Reference: NC9204118337\nDescription:\nDUE TO A BUY FLOW ORDER CAPTURE DEFECT STILL BEING PROCESSED WITH THE BUYFLOW TEAM PLEASE REMOVE TN (704) 555-2118 ON BAN 907431182 AND REPLACE WITH TN (704) 555-2119. DO NOT CLOSE THIS WITHOUT WORKING. WE CANNOT ADD NUMBERS TO AN ACCOUNT WITHOUT DISCONNECTING A CUSTOMER WHO ALREADY HAS SERVICE.\nWork Notes:\nAssigning to BOSS OM to update the service number for this customer.",
+      "opened": "2026-09-30 09:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010018"
+    },
+    {
+      "number": "INC0010019",
+      "short_description": "Dana Whitfield 913560447 - remove TN (615) 555-8043 and replace with TN (615) 555-8044",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Digital Buyflow\nBusiness Service: BOSS AX Buyflow\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 913560447\nTN: (615) 555-8043\nOrder Reference: TN9118004552\nDescription:\nDUE TO A BUY FLOW DEFECT PLEASE REMOVE TN (615) 555-8043 ON BAN 913560447 AND REPLACE WITH TN (615) 555-8044. PLEASE DO NOT CLOSE THIS WITHOUT WORKING. WE CANNOT ADD NUMBERS TO AN ACCOUNT WITHOUT DISCONNECTING AN EXISTING CUSTOMER.\nWork Notes:\nBuy Flow produced the wrong service number at order capture. Please correct.",
+      "opened": "2026-09-29 16:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010019"
+    },
+    {
+      "number": "INC0010020",
+      "short_description": "Remove TN (803) 555-6621 on BAN 928104663 and replace with TN (803) 555-6622",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Digital Buyflow\nBusiness Service: BOSS AX Buyflow\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 928104663\nTN: (803) 555-6621\nOrder Reference: SC9330076104\nDescription:\nORDER CAPTURE IN BUYFLOW ASSIGNED THE WRONG TELEPHONE NUMBER. PLEASE REMOVE TN (803) 555-6621 ON BAN 928104663 AND REPLACE IT WITH TN (803) 555-6622.\nWork Notes:\nReferred from the digital channel; the capture defect sits with Buy Flow.",
+      "opened": "2026-09-26 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010020"
+    },
+    {
+      "number": "INC0010021",
+      "short_description": "Change plan completed but changes are not effective - 934778215",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Digital Buyflow\nBusiness Service: BOSS AX Buyflow\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 934778215\nOrder Reference: OH9412007733\nDescription:\nORDER COMPLETED SOME WEEKS AGO HOWEVER THE SYSTEM IS STILL BILLING THE CUSTOMER. SERVICE PROFILE SHOWS ONLY PHONE, AND CHANGE PLAN WILL NOT ALLOW ANY CHANGES AS INTERNALLY THE SYSTEM DOES NOT RECOGNISE THE CHANGE. PLEASE CORRECT THE ACCOUNT.\nWork Notes:\nRaised through the Buy Flow digital journey; changes from the last order never applied.",
+      "opened": "2026-09-25 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010021"
+    },
+    {
+      "number": "INC0010022",
+      "short_description": "Buy Flow order capture failed for BAN 941025590",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Digital Buyflow\nBusiness Service: BOSS AX Buyflow\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 941025590\nTN: (504) 555-3390\nOrder Reference: LA9507113028\nDescription:\nTHE BUY FLOW ORDER FOR THIS CUSTOMER FAILED PART WAY THROUGH CAPTURE AND LEFT THE ACCOUNT WITH A PARTIAL SERVICE PROFILE. PLEASE ADVISE - WE CANNOT RE-RUN THE JOURNEY WITHOUT LOSING THE CUSTOMER'S EXISTING SERVICE.\nWork Notes:\nEscalated from the digital team; owned by Buy Flow, not BOSS OM.",
+      "opened": "2026-09-24 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010022"
+    },
+    {
+      "number": "INC0010023",
+      "short_description": "Wrong account banner - 952330871",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Network Type Mismatch\nBusiness Service: BOSS OM\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 952330871\nDescription:\nAsking for your assistance on correcting the banner from postpaid fiber to copper. The account shows the wrong banner in C360 and the agent cannot proceed.\nWork Notes:\nThe provisioned network on this BAN is copper but the banner reads postpaid fiber. Please correct the banner so it matches what is actually provisioned.",
+      "opened": "2026-09-22 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010023"
+    },
+    {
+      "number": "INC0010024",
+      "short_description": "No Disconnect Order but Account is Inactive - 963118204",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Account Status Mismatch\nBusiness Service: BOSS OM\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 963118204\nDescription:\nWe are unable to close the OWS case due to BAN 963118204 having no disconnection order but already being Inactive. We also have no option to cancel the service, and per the notes on the account it was supposed to remain in service.\nWork Notes:\nNo disconnect order exists on this BAN. Requesting the account status be reviewed.",
+      "opened": "2026-09-21 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010024"
+    },
+    {
+      "number": "INC0010025",
+      "short_description": "Order for speed upgrade not reflecting on the account - order WI9613002247",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Staging Stuck\nBusiness Service: BOSS OM\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 974602339\nOrder Reference: WI9613002247\nDescription:\nAgent processed a speed upgrade from 100MBPS to 200MBPS plus VAS but it has not reflected on the customer account. Order number WI9613002247. The order was placed and accepted but the account still shows the old speed.\nWork Notes:\nOrder does not appear in the order history on the account. Please push the order.",
+      "opened": "2026-09-18 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010025"
+    },
+    {
+      "number": "INC0010026",
+      "short_description": "Order cancelled but account still shows a pending order - 985447016",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Account Status Mismatch\nBusiness Service: BOSS OM\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 985447016\nOrder Reference: NC9722034398\nDescription:\nThe disconnect order on this account was cancelled but the account is still sitting in a pending state, so we cannot create a new order for the customer. Please review the account status against the order.\nWork Notes:\nOrder NC9722034398 shows cancelled in BOSS but the account never came out of pending.",
+      "opened": "2026-09-14 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010026"
+    },
+    {
+      "number": "INC0010027",
+      "short_description": "Order stuck past due date with an open task - order OH9831082966",
+      "state_display": "New",
+      "is_closed": false,
+      "_source": "Synthetic demo ticket (backend/make_synthetic_queue.py). All identifiers fabricated.",
+      "block": "Subcategory: Staging Stuck\nBusiness Service: BOSS OM\nAssignment Group: BOSS OM IT Support\nCategory: Marketing, Sales & Billing Applications\nBAN: 996215483\nOrder Reference: OH9831082966\nOrder Task: OMTASK930632918\nDescription:\nThe install was completed on site but order OH9831082966 has not moved to complete. It is sitting past its due date and the customer is not being billed correctly.\nWork Notes:\nTech confirmed the job is done. The order still has an open task blocking completion.",
+      "opened": "2026-09-07 12:17:14",
+      "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010027"
+    }
+  ]
+}

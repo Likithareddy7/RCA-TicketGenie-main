@@ -1,0 +1,28 @@
+{
+  "_description": "Deterministic redirect rules. A ticket matching a rule is REASSIGNED to another team instead of being remediated here — the recommendation becomes 'route this elsewhere'. Evaluated in order; the first match wins. Read fresh on every call (backend/routing_store.py), so rules can be edited without restarting.",
+  "_matching": "Each `match_any` entry is a regex, matched case-insensitively against the ticket's searchable text (short_description, description, subcategory, category, work notes, and every labelled field value). `exclude_any` vetoes a match. Regexes — not plain substrings — so word boundaries can be enforced.",
+  "_important": "Set `assignment_group` to the EXACT ServiceNow assignment-group name for the receiving team. This is not cosmetic: on approval the app PATCHes assignment_group to this exact string, and ServiceNow will reject a name it cannot resolve to a real group.",
+  "_reassignment": "A rule with an assignment_group makes approval MOVE the ticket to that group (assignment_group only — never state, close, or resolve). Clear the assignment_group to downgrade a rule back to recommend-and-comment.",
+
+  "rules": [
+    {
+      "name": "buy_flow",
+      "label": "Buy Flow",
+      "match_any": [
+        "\\bb(?:uy|y)[ _-]?flow\\b",
+        "\\bdigital[ _-]buy?flow\\b",
+        "\\bboss[ _-]ax[ _-]buy?flow\\b"
+      ],
+      "exclude_any": [],
+      "assignment_group": "BUYFLOW TEAM",
+      "reason": "Buy Flow order-capture defects are owned by the Buy Flow team; BOSS OM cannot remediate them and routing them here delays the fix.",
+      "_instructions_note": "Supplementary steps only. The engine always emits 'Reassign incident <n> to <group>' as step 1, so do not repeat it here.",
+      "instructions": [
+        "Leave the customer-facing details and any referenced BAN/TN untouched — the receiving team needs them as reported.",
+        "Do not close or resolve; ownership transfers and the incident stays open."
+      ]
+    }
+  ],
+
+  "_add_more": "Add further rules in the same shape, e.g. a TSC rule matching 'fallout to tsc' -> assignment_group 'TSC-Technician Support Center'. Order matters: put the most specific rule first."
+}
