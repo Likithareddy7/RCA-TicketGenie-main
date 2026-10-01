@@ -536,3 +536,129 @@ def reassign(number: str, assignment_group: str) -> dict:
                           f"data/routing_rules.json.")}
     return {"number": number, "sys_id": sys_id, "reassigned": True,
             "assignment_group": landed}
+
+
+# ── incident creation (third write operation) ─────────────────────────────
+#
+# This app's write surface was deliberately limited to two operations,
+# post_comment and reassign, and CLAUDE.md records that adding a third is a
+# product decision rather than an implementation detail. The product owner has
+# now signed that off for the customer conversation: when the knowledge base has
+# no answer, the customer can have a ticket raised.
+#
+# The guards are the same ones the other writes use, for the same reasons:
+#   * `state` is absent from the payload, so a created incident lands in the
+#     instance default (New) and this client still never transitions anything.
+#   * `assignment_group` is read back after the write, because ServiceNow silently
+#     DROPS a group name it cannot resolve. Without the read-back, a typo would
+#     produce an unassigned ticket that looked like a success.
+#   * Creation is restricted to the demo group by default, so a bug here cannot
+#     spray tickets into a live queue.
+
+DEMO_GROUP = os.getenv("SERVICENOW_DEMO_GROUP", "TICKETGENIE DEMO").strip()
+
+
+def create_incident(short_description: str, description: str,
+                    assignment_group: str = "", extra: dict = None) -> dict:
+    """Create an incident and return {number, sys_id, url, assignment_group}.
+
+    Only called after every required field has been collected and the customer has
+    confirmed the details (see fallout_engine's ticket flow). Never sets state.
+    """
+    if not (short_description or "").strip():
+        raise ValueError("short_description is required to create an incident")
+    if not (description or "").strip():
+        raise ValueError("description is required to create an incident")
+
+    group = (assignment_group or DEMO_GROUP).strip()
+    payload = {"short_description": short_description.strip(),
+               "description": description.strip()}
+    if group:
+        payload["assignment_group"] = group
+    # Caller-supplied extras are allowed, but `state` is stripped no matter what is
+    # passed: this client does not transition tickets, and that rule is enforced here
+    # rather than trusted to every call site.
+    for k, v in (extra or {}).items():
+        if k in ("state", "incident_state", "close_code", "close_notes", "resolved_at"):
+            continue
+        if str(v or "").strip():
+            payload[k] = v
+
+    url = f"{INSTANCE}/api/now/table/incident"
+    resp = _request("POST", url,
+                    headers={"Content-Type": "application/json"},
+                    params={"sysparm_fields": "number,sys_id,assignment_group",
+                            "sysparm_display_value": "all"},
+                    json=payload, timeout=30)
+    resp.raise_for_status()
+    result = resp.json().get("result") or {}
+
+    number = _dv(result.get("number"))
+    sys_id = _dv(result.get("sys_id"))
+    landed = _dv(result.get("assignment_group"))
+
+    out = {"number": number, "sys_id": sys_id, "created": bool(number),
+           "assignment_group": landed,
+           "url": f"{INSTANCE}/nav_to.do?uri=incident.do%3Fsys_id%3D{sys_id}" if sys_id else ""}
+    if group and landed.strip().lower() != group.strip().lower():
+        # The ticket exists, so this is a warning rather than a failure. Say so
+        # precisely instead of reporting a clean success.
+        out["warning"] = (f"Incident {number} was created but ServiceNow did not accept "
+                          f"assignment group '{group}' (it shows '{landed or 'nobody'}'). "
+                          f"Check that the group exists.")
+    return out
+
+
+def find_group(name: str) -> dict | None:
+    """Look up an assignment group by exact name. Read-only."""
+    if not (name or "").strip():
+        return None
+    rows = _table_get("sys_user_group", {
+        "sysparm_query": f"name={name.strip()}",
+        "sysparm_fields": "sys_id,name",
+        "sysparm_limit": 1,
+    })
+    return rows[0] if rows else None
+
+
+def create_group(name: str, description: str = "") -> dict:
+    """Create an assignment group, or return the existing one.
+
+    Needed because ServiceNow drops an assignment_group it cannot resolve, so the
+    group has to exist before any ticket can be routed to it.
+    """
+    existing = find_group(name)
+    if existing:
+        return {"sys_id": existing["sys_id"], "name": existing["name"], "created": False}
+    resp = _request("POST", f"{INSTANCE}/api/now/table/sys_user_group",
+                    headers={"Content-Type": "application/json"},
+                    params={"sysparm_fields": "sys_id,name"},
+                    json={"name": name,
+                          "description": description or f"{name} (created by TicketGenie)"},
+                    timeout=30)
+    resp.raise_for_status()
+    r = resp.json().get("result") or {}
+    return {"sys_id": _dv(r.get("sys_id")), "name": _dv(r.get("name")), "created": True}
+
+
+def fetch_group_tickets(group: str) -> list:
+    """Every parsed incident assigned to one group. Read-only."""
+    if not (group or "").strip():
+        return []
+    try:
+        rows = _table_get("incident", {
+            "sysparm_query": f"assignment_group.name={group.strip()}^ORDERBYnumber",
+            "sysparm_fields": INCIDENT_FIELDS,
+            "sysparm_display_value": "all",
+            "sysparm_limit": 500,
+        })
+    except Exception as e:
+        print(f"[WARN] could not read group {group!r} from ServiceNow: {e}")
+        raise
+    return [parse_ticket(r) for r in rows]
+
+
+def fetch_demo_closed_kb() -> list:
+    """Closed incidents in the demo group: the knowledge base when KB_SOURCE is
+    'servicenow'. Seeded by backend/seed_demo_tickets.py."""
+    return [t for t in fetch_group_tickets(DEMO_GROUP) if t["is_closed"]]

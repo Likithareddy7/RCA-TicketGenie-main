@@ -140,9 +140,41 @@ def get_collection():
 
 # ── KB build / sync from ServiceNow ─────────────────────────────────────
 
+# Where the closed-ticket knowledge base comes from.
+#
+#   spreadsheet  the file in data/ (default: works with no instance at all)
+#   servicenow   closed incidents in the demo assignment group, so what is visible
+#                in the ServiceNow UI is literally what gets searched
+#
+# When 'servicenow' is selected but the instance cannot be read, this falls back to
+# the spreadsheet rather than serving an empty KB. That is a deliberate product
+# decision: an unreachable instance should degrade the KB's freshness, not wipe out
+# the assistant's ability to answer anything.
+KB_SOURCE = os.getenv("KB_SOURCE", "spreadsheet").strip().lower()
+
+
+def fetch_kb() -> list:
+    """The closed tickets to index, from whichever source is configured."""
+    if KB_SOURCE == "servicenow":
+        import servicenow_client
+        try:
+            kb = servicenow_client.fetch_demo_closed_kb()
+            if kb:
+                print(f"[FALLOUT-KB] source: ServiceNow group "
+                      f"{servicenow_client.DEMO_GROUP!r} ({len(kb)} closed)")
+                return kb
+            print(f"[FALLOUT-KB] ServiceNow group "
+                  f"{servicenow_client.DEMO_GROUP!r} has no closed incidents; "
+                  f"falling back to the spreadsheet.")
+        except Exception as e:
+            print(f"[FALLOUT-KB] ServiceNow KB unavailable ({type(e).__name__}); "
+                  f"falling back to the spreadsheet.")
+    return kb_source.fetch_closed_kb()
+
+
 def build_kb() -> int:
-    """Clear and rebuild the KB collection from the CLOSED rows of the incidents
-    spreadsheet. Returns the number of KB tickets indexed."""
+    """Clear and rebuild the KB collection from the CLOSED tickets of whichever
+    source is configured (see fetch_kb). Returns the number indexed."""
     global _client, _collection
     if _client is None:
         init_collection()
@@ -156,9 +188,9 @@ def build_kb() -> int:
         metadata={"hnsw:space": "cosine"},
     )
 
-    kb = kb_source.fetch_closed_kb()
+    kb = fetch_kb()
     if not kb:
-        print("[FALLOUT-KB] No closed tickets found in the incidents spreadsheet.")
+        print("[FALLOUT-KB] No closed tickets found in the configured KB source.")
         _init_bm25()
         return 0
 
@@ -190,7 +222,7 @@ def sync_kb(closed_tickets: list = None) -> dict:
     if _collection is None:
         init_collection()
     if closed_tickets is None:
-        closed_tickets = kb_source.fetch_closed_kb()
+        closed_tickets = fetch_kb()
     closed_tickets = _dedupe(closed_tickets)
 
     existing = _collection.get(include=["metadatas"])

@@ -1,0 +1,187 @@
+{
+  "_description": "Customer-facing support tickets for the Ticket Genie demo. These are RESOLVED tickets and form the knowledge base the conversation draws on. Unlike the order-fallout export, the resolutions here are already written in plain customer language, which is what makes them safe to surface in a customer conversation.",
+  "_provenance": "The first 18 tickets (IA-200 to IA-217) were supplied by the product owner and are stored here verbatim, including their original wording.",
+  "_schema": "ticket_id, order_type, source_system, error_code, error_message, task_name, pawn_status, existing_order_id, root_cause, resolved_team, resolution, resolved_at, resolution_time_hours",
+  "tickets": [
+    {
+      "ticket_id": "IA-200", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-001",
+      "error_message": "Modem showing solid red light — no internet connection",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The modem lost its connection to the internet after a software update was applied overnight. The modem restarted but could not reconnect on its own.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support agent restarted the modem remotely from their system. The modem reconnected to the internet within a few minutes. Customer confirmed everything was working.",
+      "resolved_at": "2026-01-05T10:00:00Z", "resolution_time_hours": 0.5
+    },
+    {
+      "ticket_id": "IA-206", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-001",
+      "error_message": "Modem power light is on but WAN light is off — no internet signal detected",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The modem was powered on but could not pick up the internet signal from the line. A faulty splitter on the customer's internal phone wiring was causing interference and blocking the connection.",
+      "resolved_team": "Tech_Support",
+      "resolution": "A technician was sent to the customer's home and found a damaged splitter on the phone wiring. The splitter was replaced and the modem was able to connect to the internet again. The customer confirmed the connection was restored.",
+      "resolved_at": "2026-01-06T15:30:00Z", "resolution_time_hours": 5.0
+    },
+    {
+      "ticket_id": "IA-207", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-001",
+      "error_message": "Modem stuck in reboot loop — red light flashing, never syncs",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "A faulty software update was pushed to the modem overnight. The update did not install correctly and caused the modem to keep restarting over and over without ever fully turning on.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support team remotely reset the modem back to its original settings to remove the broken update. Once it recovered, a clean working update was sent to it remotely. The modem restarted successfully and the internet connection was restored.",
+      "resolved_at": "2026-01-07T11:00:00Z", "resolution_time_hours": 1.5
+    },
+    {
+      "ticket_id": "IA-201", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-002",
+      "error_message": "Internet keeps dropping every few hours — modem randomly rebooting",
+      "task_name": "MODEM_STABILITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The customer had an older modem model that was no longer compatible with a recent network upgrade. The modem could not handle the updated connection and kept crashing.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support team identified that the modem was too old to work with the current network. A new modem was sent to the customer. After the customer swapped it out using the setup guide, the connection became stable with no more drops.",
+      "resolved_at": "2026-01-08T14:00:00Z", "resolution_time_hours": 48.0
+    },
+    {
+      "ticket_id": "IA-208", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-002",
+      "error_message": "Internet drops for 2-5 minutes multiple times a day — modem log shows repeated reconnection events",
+      "task_name": "MODEM_STABILITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "An unshielded extension cable near a power strip in the customer's home was causing electrical interference on the phone line. This interference was disrupting the internet connection and forcing the modem to reconnect several times a day.",
+      "resolved_team": "Tech_Support",
+      "resolution": "A technician visited the customer and found the problematic extension cable. It was replaced with a properly filtered cable. After the fix the connection became stable and there were no further drops over the next 24 hours.",
+      "resolved_at": "2026-01-10T13:00:00Z", "resolution_time_hours": 24.0
+    },
+    {
+      "ticket_id": "IA-209", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-002",
+      "error_message": "Connection drops overnight — modem offline every morning when customer wakes up",
+      "task_name": "MODEM_STABILITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The network was set to automatically disconnect inactive connections after one hour. During quiet overnight hours when the customer was not using the internet, the connection was being cut off and the modem was not reconnecting on its own.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team extended the inactivity timeout so the connection would not be dropped overnight. They also adjusted the modem settings so it checks in with the network more frequently to keep the connection alive. The issue was monitored for 3 days with no drops recorded.",
+      "resolved_at": "2026-01-11T10:00:00Z", "resolution_time_hours": 3.0
+    },
+    {
+      "ticket_id": "IA-202", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-003",
+      "error_message": "WiFi connected but no internet — all devices show No Internet Access",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The modem had too many devices connecting and disconnecting over time, which filled up its internal device list. New devices could join the WiFi but could not actually get on the internet because there was no room left for them.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support agent walked the customer through a factory reset on the modem to clear the full device list. After the reset and a quick reconfiguration, all devices were able to connect to the internet normally.",
+      "resolved_at": "2026-01-12T09:30:00Z", "resolution_time_hours": 1.0
+    },
+    {
+      "ticket_id": "IA-210", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-003",
+      "error_message": "Devices connected to WiFi but showing limited connectivity — cannot load any websites",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "A power outage had partially reset the modem and wiped its internet address settings. The modem appeared to be online but could not translate website names into addresses, so no pages would load on any device.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support agent remotely checked the modem settings and found the internet address fields were blank. The correct settings were pushed to the modem remotely. A quick test confirmed websites were loading normally on all devices.",
+      "resolved_at": "2026-01-13T09:00:00Z", "resolution_time_hours": 1.0
+    },
+    {
+      "ticket_id": "IA-211", "order_type": "support", "source_system": "Customer",
+      "error_code": "MODEM-003",
+      "error_message": "One device on the network has internet, all others show no internet access",
+      "task_name": "MODEM_CONNECTIVITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The modem was incorrectly set up to only allow two devices to connect at a time. The first device to connect got internet access but every other device in the home was rejected and could not get online.",
+      "resolved_team": "Tech_Support",
+      "resolution": "The support agent identified that the modem was only allowing a very limited number of devices and corrected the setting remotely to allow the full household to connect. The modem was restarted and all devices got internet access.",
+      "resolved_at": "2026-01-14T16:00:00Z", "resolution_time_hours": 1.5
+    },
+    {
+      "ticket_id": "IA-203", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-001",
+      "error_message": "No dial tone after service was installed — phone line completely dead",
+      "task_name": "VOICE_LINE_ACTIVATION", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The install order was marked as complete but the phone line was never actually switched on by the network team. The setup step for the phone line was missed during the installation process.",
+      "resolved_team": "Provisioning",
+      "resolution": "The provisioning team found that the phone line had not been activated on the network and switched it on manually. The customer had a working dial tone within 10 minutes and was able to make and receive calls.",
+      "resolved_at": "2026-01-15T11:00:00Z", "resolution_time_hours": 2.0
+    },
+    {
+      "ticket_id": "IA-212", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-001",
+      "error_message": "Phone line installed but getting fast busy signal instead of dial tone",
+      "task_name": "VOICE_LINE_ACTIVATION", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The customer's phone number was added to the system but was not properly linked to their phone line on the network. Because of this the number had nowhere to connect to and gave a busy signal instead of a dial tone.",
+      "resolved_team": "Provisioning",
+      "resolution": "The provisioning team found that the phone number was not linked to the customer's line and made the connection manually in the system. A test call confirmed a clean dial tone and that incoming calls were reaching the customer correctly.",
+      "resolved_at": "2026-01-16T14:00:00Z", "resolution_time_hours": 2.5
+    },
+    {
+      "ticket_id": "IA-213", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-001",
+      "error_message": "Voice service activated on the order but customer cannot make or receive any calls",
+      "task_name": "VOICE_LINE_ACTIVATION", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The customer's phone device was trying to register with an old server address that no longer existed. Because it could not reach the correct server the phone line never activated properly.",
+      "resolved_team": "Provisioning",
+      "resolution": "The provisioning team found the outdated server address in the phone device settings and updated it to the correct one. The device reconnected within a minute and both incoming and outgoing test calls completed successfully.",
+      "resolved_at": "2026-01-17T10:30:00Z", "resolution_time_hours": 2.0
+    },
+    {
+      "ticket_id": "IA-204", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-002",
+      "error_message": "Calls dropping after 2-3 minutes — happens on every outgoing call",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "A setting on the voice network equipment was incorrectly changed during a maintenance window. This caused all calls to be automatically cut off after 3 minutes instead of allowing them to run normally.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team found the incorrect setting and corrected it. The customer was called back to confirm that calls were now staying connected. No further drops were reported.",
+      "resolved_at": "2026-01-18T16:00:00Z", "resolution_time_hours": 3.0
+    },
+    {
+      "ticket_id": "IA-214", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-002",
+      "error_message": "Calls cut off exactly at 30 minutes every time — no warning before disconnect",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The network had a setting that ended calls after exactly 30 minutes if it did not receive a check-in signal mid-call. Since no check-in was set up, every call over 30 minutes was being automatically terminated.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team set up a mid-call check-in at the 15-minute mark so that long calls stay active. Test calls held open for 45 minutes confirmed no disconnects. The fix was monitored for 24 hours with no issues.",
+      "resolved_at": "2026-01-19T15:00:00Z", "resolution_time_hours": 3.5
+    },
+    {
+      "ticket_id": "IA-215", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-002",
+      "error_message": "Calls dropping when placed on hold — line goes dead when customer uses hold button",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "When the customer pressed hold, the network equipment did not recognise the hold signal correctly and ended the call instead of pausing it. The equipment had not been set up to handle the hold function properly.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team updated the equipment settings to correctly handle the hold function. The fix was applied without any service interruption. Hold was tested on 5 calls and worked correctly each time.",
+      "resolved_at": "2026-01-20T12:00:00Z", "resolution_time_hours": 4.0
+    },
+    {
+      "ticket_id": "IA-205", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-003",
+      "error_message": "Customer can hear the other person but the other party cannot hear them — one-sided audio on calls",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "A routing issue on the network was allowing the customer to hear the other person but was blocking the customer's own voice from being sent through. Only one direction of the call was working.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team traced the issue and fixed the routing so that audio could flow in both directions. The fix was confirmed on a test call and the customer verified the issue was resolved.",
+      "resolved_at": "2026-01-21T13:45:00Z", "resolution_time_hours": 4.0
+    },
+    {
+      "ticket_id": "IA-216", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-003",
+      "error_message": "Customer reports echo on all calls — hears their own voice delayed back to them",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The echo cancellation feature on the customer's phone port was accidentally turned off when the line card was replaced. Without this feature the customer's own voice was being reflected back to them with a delay on every call.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team found that echo cancellation had been switched off on the customer's line and turned it back on. A test call confirmed the echo was gone and the customer verified the fix on a live call.",
+      "resolved_at": "2026-01-22T11:30:00Z", "resolution_time_hours": 2.0
+    },
+    {
+      "ticket_id": "IA-217", "order_type": "support", "source_system": "Customer",
+      "error_code": "VOICE-003",
+      "error_message": "Caller on the other end reports robotic or choppy audio — customer's voice breaks up",
+      "task_name": "VOICE_QUALITY", "pawn_status": null, "existing_order_id": null,
+      "root_cause": "The network connection carrying the voice call was losing too many data packets along the way. Voice calls require a very stable connection and even small amounts of data loss cause the audio to sound robotic or broken up to the person on the other end.",
+      "resolved_team": "Network_Ops",
+      "resolution": "The network team identified that voice call traffic was not being prioritised over other data traffic on the network. They updated the network settings to give voice calls the highest priority so packets are not dropped. After the fix the customer confirmed the audio was clear on a test call.",
+      "resolved_at": "2026-01-23T17:00:00Z", "resolution_time_hours": 5.0
+    }
+  ]
+}

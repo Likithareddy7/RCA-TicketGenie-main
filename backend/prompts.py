@@ -240,137 +240,183 @@ AVAILABLE TOOLS
 Pick the tool and identifiers as strict JSON per the required shape."""
 
 
-# ── free-text search ("Ticket Genie") ────────────────────────────────────
-# A sibling of RESOLUTION_SYSTEM_PROMPT for the case where there is no ticket at
-# all, just a typed description of a problem. It is deliberately NOT the same
-# prompt: that one instructs the model to "reference the current ticket's
-# identifiers (e.g. telephone number, order/port reference)", and a search query
-# has none, so reusing it invites the model to invent identifiers that were never
-# supplied. Here the grounding rule is inverted, say so explicitly.
-
-SEARCH_RESOLUTION_SYSTEM_PROMPT = """You are a senior telecom OSS/BSS order-fallout analyst. A support engineer has typed a plain-language description of a problem. You are given that description and the TOP few most similar RESOLVED historical tickets, with exactly how each one was resolved.
-
-A single kind of problem can hide different underlying causes, so the historical tickets may have been resolved in DIFFERENT ways. Your job is to consolidate them into one actionable view.
-
-Produce two things:
-1. per_ticket, for EACH historical ticket provided, the numbered resolution steps that were actually taken to resolve it, grounded STRICTLY in that ticket's recorded resolution. Each step must begin with the responsible team/role followed by a colon. Use ONLY these roles: "Provisioning", "Order Management", "Network Operations", "Field Operations", "Service Assurance", "Service Agent". Each step must be technically specific. Keep 3-6 steps per ticket. End each ticket's steps with a "Service Agent" customer-communication step.
-2. merged_summary: 2-4 sentences that combine the per-ticket resolutions into guidance for the SEARCHED problem: state where the resolutions AGREE, and where they DIFFER because of a different underlying cause, so the engineer can choose the right path.
-
-CRITICAL GROUNDING RULES
-- The search is a DESCRIPTION, not a ticket. No account number, BAN, order id, telephone number, or Location ID has been supplied for it. You must NOT invent, guess, or state any identifier for the searched problem. Refer to it generically ("the affected account", "the order in question").
-- You may cite identifiers that appear in a HISTORICAL ticket's own recorded resolution, but only as that ticket's history, never as though they belong to the searched problem.
-- Where the historical resolutions are thin or do not really cover the searched problem, say so plainly in merged_summary rather than padding it out.
-- Do not assert that anything has already been done. These are recommended actions for a human agent.
-- Do not mention that any data is sample, simulated, or test data. Do not mention internal project or product names.
-
-Return STRICT JSON only, no markdown or code fences, in exactly this shape:
-{
-  "per_ticket": [
-    { "number": "<historical ticket number>", "steps": ["Order Management: <action>", "Service Agent: <customer message>"] }
-  ],
-  "merged_summary": "<2-4 sentences of consolidated guidance for the searched problem>"
-}"""
-
-
-def build_search_resolution_user_prompt(query: str, matches: list) -> str:
-    """Assemble the search message: the typed problem + how the top few similar
-    historical tickets were each resolved. Mirrors build_resolution_user_prompt(),
-    with a free-text query in place of a ticket record."""
-    match_lines = []
-    for m in matches:
-        meta = m.get("metadata", {})
-        sim = int(round(m.get("similarity", 0) * 100))
-        match_lines.append(
-            f"- {meta.get('number')} ({sim}% similar) | issue type: {meta.get('subcategory') or '(n/a)'} | "
-            f"resolution code: {meta.get('resolution_code') or '(none)'}\n"
-            f"    short description: {meta.get('short_description') or ''}\n"
-            f"    resolution: {meta.get('resolution_notes') or '(none recorded)'}"
-        )
-    matches_block = "\n".join(match_lines) if match_lines else "(no similar tickets found)"
-
-    return f"""SEARCHED PROBLEM (typed by the engineer, no identifiers available)
-  "{query}"
-
-TOP SIMILAR RESOLVED TICKETS (each with how it was resolved)
-{matches_block}
-
-Write the consolidated resolution as strict JSON per the required shape, one entry in per_ticket for each historical ticket above, then the merged_summary."""
-
-
-# ── customer conversation ("Ticket Genie" chat) ──────────────────────────
-# The single most important prompt in the customer-facing path, because the
-# knowledge base it draws on was written BY engineers FOR engineers. A recorded
-# resolution reads "Order Management: re-triggered the order push from the OM
-# console for NC9560220268". Handing that to a subscriber is useless at best and a
-# data leak at worst, so this prompt's job is translation plus redaction, and the
-# rules below are safety rules rather than style preferences.
+# ── ticket detail extraction ──────────────────────────────────────────────
+# Reads the customer's details out of their own message so the ticket can be
+# validated field by field.
 #
-# It also has to be willing to return NO steps. A customer cannot action most of
-# what this KB records, and an empty steps list is the correct, honest answer that
-# routes the conversation to a ticket or a rep. Padding it with plausible-sounding
-# generic advice would be the worst outcome.
+# The one rule that matters: this prompt must never fill a gap. The product owner
+# was explicit that nothing may be assumed or auto-populated, because a ticket
+# carrying a guessed account number or a guessed phone number is worse than a
+# ticket that is honestly incomplete. So an absent field comes back null, and the
+# caller is what decides to ask again.
 
-CUSTOMER_CHAT_SYSTEM_PROMPT = """You are a telecom customer-support assistant talking DIRECTLY to a customer. You are given the customer's own words and a set of internal tickets, written by engineers, describing how similar problems were resolved before.
+TICKET_EXTRACT_SYSTEM_PROMPT = """You extract structured ticket details from what a customer has written. You are given the list of fields a support ticket requires, and everything the customer has said so far.
 
-Your job is to turn that internal history into help the CUSTOMER can actually use.
+For each field, return the value the customer actually gave, or null.
 
-WHAT YOU MAY NOT DO (these are hard rules, not preferences)
-- Never mention internal system names (for example OMS, BOSS, BRIM, OM console, ServiceNow) or internal team names.
-- Never mention internal identifiers from the historical tickets: account numbers, BANs, order ids, task ids, ticket numbers, service ids, or telephone numbers belonging to other customers.
-- Never tell the customer to perform an action only an employee can perform, such as re-triggering an order, editing an account status, closing a task, or changing a provisioned network type.
-- Never state or imply that anything has already been fixed, checked, or actioned on the customer's account. You have not looked at their account.
-- Never invent a step that is not supported by the historical resolutions. If the history does not contain anything a customer can do, return an empty steps list. That is a correct answer.
+RULES, in order of importance
+- NEVER invent, infer, guess, normalise into existence, or carry over a value the customer did not state. If they did not give it, the value is null. An incomplete result is the correct result.
+- Do not derive one field from another. Do not treat a problem description as a name, do not treat an address as an account number, and do not split a single value across two fields.
+- Take the value from the customer's own words. You may tidy obvious formatting (trim spaces, keep digits of a phone number together) but you may not change, complete, or correct the content.
+- If the customer stated a field more than once, use the most recent value.
+- If a value is clearly a refusal or a placeholder ("n/a", "dont know", "none", "-"), treat the field as null rather than storing that text.
 
-WHAT TO PRODUCE
-1. reply: 1 to 3 short sentences, warm and plain, acknowledging the problem and saying what you have found. No jargon. If the history only contains work that our side must do, say so honestly rather than offering the customer busywork.
-2. steps: the things to try, in the order they should be tried. Each step is one short instruction in everyday language, addressed to the customer as "you". Mark a step with needs_engineer true when it can only be completed by our team, and phrase those as what WE will need to do rather than as an instruction. Use 0 to 5 steps. Fewer real steps is better than padding.
-3. needs_engineer_overall: true when resolving this almost certainly requires our team, based on the historical resolutions.
-4. closing_question: one short question inviting the customer to tell you whether it worked, for example "Did that get things working?". Leave it empty when there are no steps.
-
-Return STRICT JSON only, no markdown and no code fences, in exactly this shape:
+Return STRICT JSON only, no markdown and no code fences: an object whose keys are exactly the field keys you were given, each mapped to a string or null.
 {
-  "reply": "<1-3 sentences to the customer>",
-  "steps": [
-    { "text": "<one plain-language instruction>", "needs_engineer": false }
-  ],
-  "needs_engineer_overall": false,
-  "closing_question": "<one short question, or empty>"
+  "<field_key>": "<value the customer gave>" | null
 }"""
 
 
-def build_customer_chat_user_prompt(question: str, history: list, matches: list) -> str:
-    """Assemble the customer turn: what they asked, the conversation so far, and the
-    internal resolutions retrieved for it.
+def build_ticket_extract_user_prompt(fields: list, user_messages: list) -> str:
+    """Assemble the extraction message: the required fields and everything the
+    customer has said. The whole transcript is passed rather than just the latest
+    message, so details given across several messages accumulate instead of being
+    lost when the customer answers a follow-up question."""
+    field_lines = "\n".join(
+        f"  - {f['key']}: {f['label']}" + (f" ({f['hint']})" if f.get("hint") else "")
+        for f in fields
+    )
+    said = "\n".join(f"  Customer: {' '.join(str(m).split())}" for m in user_messages if str(m).strip())
+    return f"""FIELDS THE TICKET REQUIRES
+{field_lines}
 
-    The history is included so a follow-up ("it is still not working") is answered in
-    context rather than treated as a brand new problem.
-    """
-    convo = []
-    for m in (history or [])[-8:]:
-        who = "Customer" if m.get("role") == "user" else "Assistant"
-        text = " ".join(str(m.get("content", "")).split())
-        if text:
-            convo.append(f"  {who}: {text}")
-    convo_block = "\n".join(convo) if convo else "  (this is the first message)"
+EVERYTHING THE CUSTOMER HAS SAID
+{said or "  (nothing yet)"}
 
-    match_lines = []
-    for m in matches:
-        meta = m.get("metadata", {})
-        match_lines.append(
-            f"- issue type: {meta.get('subcategory') or '(n/a)'}\n"
-            f"    reported as: {meta.get('short_description') or ''}\n"
-            f"    how it was resolved internally: {meta.get('resolution_notes') or '(none recorded)'}"
+Return the JSON object. Use null for every field the customer did not actually state."""
+
+
+# ── follow-up intent ──────────────────────────────────────────────────────
+# Replaces the "That fixed it" / "I am stuck on a step" buttons. Intent now comes
+# from what the customer actually writes, so it has to be read rather than clicked.
+#
+# Deliberately a CLASSIFIER, not a conversation: it returns one label and nothing
+# else. The deterministic keyword pass in fallout_engine handles the clear cases
+# first, so this only sees genuinely ambiguous replies, and a failure here falls
+# back to treating the problem as unresolved, which is the safe direction: offering
+# more help to someone who is already fixed is a small annoyance, while closing the
+# conversation on someone who is still broken is not.
+
+FOLLOWUP_INTENT_SYSTEM_PROMPT = """You read one message from a customer who was just given troubleshooting steps, and decide whether their problem is now resolved.
+
+Return exactly one of these labels:
+
+- "resolved": the customer indicates the steps worked, the problem is fixed, or they are satisfied and do not need more help. Includes simple thanks that clearly signal completion.
+- "unresolved": the customer indicates the steps did not work, they are stuck, they cannot complete a step, the problem persists, or they are asking for more help.
+- "wants_ticket": the customer is asking for a ticket to be raised or logged for them.
+- "unclear": you genuinely cannot tell, or the message is about something else entirely.
+
+Judge only what the message says. Do not infer from politeness alone: "thanks, but it is still down" is unresolved. A question about how to do a step is unresolved, because they are not finished.
+
+Return STRICT JSON only, no markdown:
+{"intent": "resolved" | "unresolved" | "wants_ticket" | "unclear"}"""
+
+
+def build_followup_intent_user_prompt(message: str, last_steps: list) -> str:
+    steps = "\n".join(f"  {i}. {s}" for i, s in enumerate(last_steps or [], 1)) or "  (none)"
+    return f"""STEPS THE CUSTOMER WAS GIVEN
+{steps}
+
+THE CUSTOMER'S REPLY
+  "{message}"
+
+Return the JSON label."""
+
+
+# ── per-ticket resolution steps ───────────────────────────────────────────
+# Replaces the blended customer reply. That version put all three retrieved
+# resolutions into one prompt and asked for one merged set of steps, without even
+# including the ticket numbers, so the output could not be traced to a source and
+# steps from different tickets ran together. Here the model sees exactly ONE
+# ticket's resolution per call, which makes cross-contamination structurally
+# impossible instead of merely discouraged.
+#
+# There is also no conversational wrapper. The surrounding text is written
+# deterministically by the application, so nothing can introduce apologies,
+# sympathy or filler.
+
+TICKET_STEPS_SYSTEM_PROMPT = """You convert ONE resolved support ticket into the steps that resolved it, written so a customer can read them.
+
+You are given a single ticket: what the customer reported, what the root cause turned out to be, and what was actually done to fix it. Your only job is to express THAT resolution as numbered steps.
+
+HARD RULES
+- Use ONLY what is in this ticket's recorded resolution. Never add a step that is not in it. Never generalise from what usually fixes this kind of problem.
+- Never mention internal system names (for example OMS, BOSS, BRIM, OM console, ServiceNow) or internal team names.
+- Never include identifiers from the ticket: account numbers, order ids, task ids, ticket numbers, service ids or telephone numbers.
+- Write no apology, no sympathy, no greeting, no sign-off and no commentary. Steps only.
+- Mark a step with needs_engineer true when the provider performed it rather than the customer. Phrase those as what the provider did or will do.
+- Keep each step to one action, in the order it happened. Use between 1 and 5 steps. Do not pad.
+- Do not use em dashes.
+
+Return STRICT JSON only, no markdown and no code fences:
+{
+  "steps": [
+    { "text": "<one action, plain language>", "needs_engineer": false }
+  ],
+  "summary": "<one short line naming the underlying cause in this ticket>"
+}"""
+
+
+def build_ticket_steps_user_prompt(ticket: dict) -> str:
+    """One ticket, and nothing else. The caller passes a single retrieved ticket's
+    metadata, so there is no second resolution in context to bleed across."""
+    return f"""THE TICKET
+
+  Reported as:
+    {ticket.get('short_description') or '(not recorded)'}
+
+  Root cause that was found:
+    {ticket.get('description') or '(not recorded)'}
+
+  What was actually done to resolve it:
+    {ticket.get('resolution_notes') or '(none recorded)'}
+
+Return the JSON for THIS ticket's resolution only."""
+
+
+# ── consolidated recommendation ───────────────────────────────────────────
+# Produces the single ordered list the customer actually follows.
+#
+# Crucially this does NOT see the raw tickets. It is given the already-translated,
+# already-customer-safe steps that were generated from each ticket in isolation, and
+# its only job is to merge and order them. So the earlier guarantee holds: nothing
+# can enter the consolidated list that did not come from a real ticket resolution,
+# and every step can still be attributed to the ticket it came from.
+
+OVERALL_STEPS_SYSTEM_PROMPT = """You merge the resolutions of several past tickets into ONE ordered list of steps for a customer to follow now.
+
+You are given, per ticket, the steps that resolved that ticket. Each ticket is identified by its number.
+
+HOW TO MERGE
+- Combine steps that are effectively the same action into one step, and list the ticket numbers it came from.
+- Keep steps that are genuinely different as separate steps, in the order a person should try them.
+- Order the list by what to try FIRST: anything the customer can do themselves comes before anything the provider must do. Within that, simplest first.
+- Do not include every step from every ticket. Prefer the ones most likely to resolve the problem. Use between 2 and 6 steps.
+
+HARD RULES
+- Use ONLY the steps you were given. Never invent an action, never generalise, never add a step because it is common practice.
+- Every step must cite at least one of the ticket numbers it came from, in "from".
+- Mark needs_engineer true when the provider performs the step rather than the customer. Phrase those as what the provider will do.
+- Write no apology, no sympathy, no greeting, no sign-off, no preamble and no commentary. Steps only.
+- Do not mention internal system or team names, and do not include account numbers, order ids or other identifiers.
+- Do not use em dashes.
+
+Return STRICT JSON only, no markdown and no code fences:
+{
+  "steps": [
+    { "text": "<one action, plain language>", "needs_engineer": false, "from": ["<ticket number>"] }
+  ]
+}"""
+
+
+def build_overall_steps_user_prompt(groups: list) -> str:
+    """The per-ticket steps, already customer-safe, grouped by their source ticket."""
+    blocks = []
+    for g in groups:
+        lines = "\n".join(
+            f"    - {s['text']}" + ("  (provider performs this)" if s.get("needs_engineer") else "")
+            for s in g.get("steps", [])
         )
-    matches_block = "\n".join(match_lines) if match_lines else "(nothing similar was found)"
-
-    return f"""THE CUSTOMER'S CURRENT MESSAGE
-  "{question}"
-
-CONVERSATION SO FAR
-{convo_block}
-
-SIMILAR PROBLEMS AND HOW THEY WERE RESOLVED INTERNALLY
-(these are engineer notes. Translate, redact, and only keep what a customer can do.)
-{matches_block}
-
-Reply to the customer as strict JSON per the required shape."""
+        blocks.append(f"  TICKET {g.get('number', '')} "
+                      f"(cause: {g.get('cause') or 'not recorded'})\n{lines}")
+    return "\n\n".join(blocks) + "\n\nReturn the merged, ordered JSON list."

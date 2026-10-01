@@ -1,6 +1,6 @@
 {
-  "_description": "Local demo queue — the synthetic tickets from data/synthetic_open_queue.json, used when ServiceNow is unavailable. `opened` is spread across the age bands so the priority colouring is visible. Original file: fake_tickets.backup.json",
-  "enabled": true,
+  "_description": "Local demo queue \u2014 the synthetic tickets from data/synthetic_open_queue.json, used when ServiceNow is unavailable. `opened` is spread across the age bands so the priority colouring is visible. Original file: fake_tickets.backup.json",
+  "enabled": false,
   "tickets": [
     {
       "number": "INC0010018",
@@ -102,5 +102,6 @@
       "opened": "2026-09-07 12:17:14",
       "url": "https://dev419727.service-now.com/incident_list.do?sysparm_query=number%3DINC0010027"
     }
-  ]
+  ],
+  "_disabled_note": "Disabled because these numbers (INC0010018 to INC0010027) collide with the real incidents seeded into the TICKETGENIE DEMO group. Set enabled back to true only if the seeded tickets are removed."
 }

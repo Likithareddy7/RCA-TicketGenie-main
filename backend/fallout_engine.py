@@ -631,8 +631,35 @@ def format_comment(rec: dict) -> str:
 # nonsense at 0.10-0.23. Out-of-domain and weak-but-real therefore OVERLAP, and no
 # single cut separates them, hence three bands and an honest label on each result,
 # instead of one threshold pretending to be precise.
-SEARCH_MIN_SIM = 0.30      # below this: no usable match, and the LLM is not called
-SEARCH_PARTIAL_SIM = 0.45  # 0.30-0.45 reads as 'weak', 0.45-0.60 as 'partial'
+# Re-measured against the 18-ticket customer support KB, twice.
+#
+# The first pass used 22 fairly specific phrasings ("wifi is connected but there is
+# no internet") and suggested a floor of 0.45. That was wrong, and the way it was
+# wrong is worth recording: SHORT, GENERIC phrasings are exactly what customers
+# actually type, and they score much lower against long specific documents. "my
+# internet is not working" scores 0.467, "i have no internet" 0.372 and "my line is
+# dead" 0.361, so a 0.45 floor refused real customers while the calibration set
+# looked healthy.
+#
+# The second pass measured 15 short generic customer phrasings against 10 off-topic
+# ones (billing, cancellation, opening hours, nonsense). At 0.36 every on-topic query
+# is accepted and every off-topic one is refused. The nearest false positive, "can I
+# cancel my service", sits at 0.349, so the margin is real but thin: roughly 0.012.
+# Raising the floor above 0.38 starts refusing genuine problems again.
+# Recalibrated a third time, against the live ServiceNow-backed KB rather than the
+# spreadsheet, because the parsed text differs slightly and the scores moved with it.
+# The decisive case: "I want to cancel my service" scores 0.361 here, so a 0.36 floor
+# answered a cancellation request with modem troubleshooting steps. Measured across 15
+# on-topic and 14 off-topic phrasings, any floor from 0.38 to 0.46 gives zero false
+# accepts. 0.40 is chosen for margin: 0.04 above the highest off-topic score and 0.06
+# below the lowest on-topic one it accepts.
+#
+# The cost is that two very terse phrasings, "my line is dead" (0.354) and "i have no
+# internet" (0.374), fall below the floor and get the honest "I could not find
+# anything" plus a ticket offer. That is a safe answer; troubleshooting a cancellation
+# request is not.
+SEARCH_MIN_SIM = 0.40      # below this: no usable match, and the LLM is not called
+SEARCH_PARTIAL_SIM = 0.55  # 0.36-0.55 reads as 'weak', 0.55-0.60 as 'partial'
 SEARCH_TOP_N = 3           # how many matches to return (retrieval still runs at k=5)
 
 # A query that is just an incident number is a request for the FULL pipeline on
@@ -654,144 +681,37 @@ def _strength(sim: float) -> str:
     return "weak"
 
 
-def _search_candidates(results: list) -> list:
-    """The matches shown for a search. Carries more of the record than the queue's
-    `_candidates()` does, because here the historical ticket IS the answer rather
-    than supporting evidence for a live one."""
-    out = []
-    for r in results:
-        meta = r["metadata"]
-        out.append({
-            "number": meta.get("number", ""),
-            "similarity": r["similarity"],
-            "strength": _strength(r["similarity"]),
-            "resolution_code": meta.get("resolution_code", ""),
-            "subcategory": meta.get("subcategory", ""),
-            "short_description": meta.get("short_description", ""),
-            "resolution": meta.get("resolution_notes", ""),
-            "state": meta.get("state", ""),
-        })
-    return out
-
-
-def _generate_search_resolution(query: str, top: list) -> dict:
-    """Consolidated resolution for a typed problem: each match's own steps plus a
-    merged summary. Mirrors _generate_resolution(), but prompted for a query with
-    no identifiers (see prompts.SEARCH_RESOLUTION_SYSTEM_PROMPT).
-
-    Falls back to quoting each ticket's OWN recorded close notes when the model is
-    unavailable, still grounded, still useful, and flagged `verbatim` so the UI
-    never presents a quote as tailored advice.
-    """
-    def _skeleton():
-        return [{"number": r["metadata"].get("number", ""),
-                 "similarity": r["similarity"],
-                 "resolution_code": r["metadata"].get("resolution_code", ""),
-                 "steps": _steps_from_notes(r["metadata"].get("resolution_notes", "")),
-                 "verbatim": True} for r in top]
-
-    if not top:
-        return {"per_ticket": [], "merged_summary": ""}
-
-    user_prompt = prompts.build_search_resolution_user_prompt(query, top)
-    try:
-        raw = _chat(prompts.SEARCH_RESOLUTION_SYSTEM_PROMPT, user_prompt,
-                    max_tokens=1200, temperature=0.2)
-        data = _parse_json(raw)
-        steps_by_num = {}
-        for pt in (data.get("per_ticket") or []):
-            num = str(pt.get("number", "")).strip()
-            steps_by_num[num] = [str(s).strip() for s in (pt.get("steps") or []) if str(s).strip()]
-        # Similarity and resolution code come from metadata, never from the model.
-        per_ticket = []
-        for r in top:
-            meta = r["metadata"]
-            num = meta.get("number", "")
-            per_ticket.append({"number": num, "similarity": r["similarity"],
-                               "resolution_code": meta.get("resolution_code", ""),
-                               "steps": steps_by_num.get(num, [])})
-        return {"per_ticket": per_ticket,
-                "merged_summary": str(data.get("merged_summary", "")).strip()}
-    except Exception as e:
-        print(f"[ENGINE] search resolution generation failed: {e}")
-        # `verbatim` tells the UI these are the resolving agents' own recorded words,
-        # not guidance written for this search, so it can say so rather than passing
-        # a quote off as tailored advice.
-        return {"per_ticket": _skeleton(), "merged_summary": "", "verbatim": True}
-
-
-def search_resolutions(query: str, k: int = 5) -> dict:
-    """Find the closest resolved tickets for a typed problem description.
-
-    Read-only: retrieves, then writes prose about what was already recorded. No
-    tool runs, no ticket is touched.
-    """
-    query = (query or "").strip()
-    if not query:
-        return {"mode": "search", "query": "", "error": "Enter a problem description to search."}
-
-    try:
-        results = fallout_store.search(query, k=max(k, SEARCH_TOP_N))
-    except Exception as e:
-        print(f"[ENGINE] search retrieval failed: {e}")
-        return {"mode": "search", "query": query,
-                "error": "The knowledge base is unavailable. Please try again."}
-
-    kb_size = fallout_store.count()
-    usable = [r for r in results if r["similarity"] >= SEARCH_MIN_SIM][:SEARCH_TOP_N]
-
-    # Nothing clears the floor: say so, and show the nearest miss WITH its real
-    # score so the answer is checkable. No LLM call, writing confident steps from
-    # history this distant is how a search tool starts inventing things.
-    if not usable:
-        near = _search_candidates(results[:1])
-        return {"mode": "search", "query": query, "no_match": True,
-                "kb_size": kb_size,
-                "top_similarity": results[0]["similarity"] if results else 0.0,
-                "match_strength": "none", "matches": [],
-                "near_miss": near[0] if near else None,
-                "resolution": {"per_ticket": [], "merged_summary": ""},
-                "message": ("No resolved ticket in the knowledge base is close enough to "
-                            "this description to base a resolution on.")}
-
-    resolution = _generate_search_resolution(query, usable)
-    top_sim = usable[0]["similarity"]
-    return {"mode": "search", "query": query, "no_match": False,
-            "kb_size": kb_size,
-            "top_similarity": top_sim,
-            "match_strength": _strength(top_sim),
-            "matches": _search_candidates(usable),
-            "resolution": resolution,
-            "message": ""}
-
-
 # ── customer conversation ("Ticket Genie" chat) ──────────────────────────────
 #
 # A conversation, not a search box. The customer describes a problem in their own
 # words, gets steps to try, and is offered a ticket or a rep when the steps run out.
 #
 # The CONTROL FLOW here is deterministic and the model only writes prose, which is
-# the same split the rest of this app uses. Intent comes from the quick-reply the
-# customer pressed, not from asking a model to interpret free text, so "these steps
-# worked" can never be misread as "I am stuck" and the conversation cannot be
-# derailed by an LLM outage. Free text is always treated as describing a problem,
-# which is the safe default: the worst case is that we retrieve and offer help again.
+# the same split the rest of this app uses. Where there are buttons, intent comes from
+# the button rather than from model interpretation, so the two can never disagree.
+#
+# The exception is the reply to troubleshooting steps. Those buttons were removed on
+# the owner's instruction, so that reply has to be READ: _followup_intent() tries an
+# unambiguous keyword pass first and only consults the model for genuinely ambiguous
+# wording. It is biased towards 'unresolved', because continuing to help someone who
+# is already fixed is a small annoyance, while closing the conversation on someone who
+# is still broken is not. Any other free text is treated as describing a problem.
 #
 # Stages the client renders:
 #   troubleshoot   steps were found, ask whether they worked
 #   no_match       nothing close enough in the KB, offer a ticket or a rep
 #   escalate       the customer is stuck or needs our side to act
 #   resolved       the customer confirmed it is fixed, conversation closed
-#   ticket_draft   a ticket was drafted. NOTHING was sent to ServiceNow
+#   ticket_review  the completed ticket, shown for approval before creation
 #   rep            hand off to a human rep
 #   ticket_lookup  an incident number was typed, return the full agent pipeline
 
-CHAT_ACTIONS = ("worked", "stuck", "open_ticket", "talk_to_rep")
+CHAT_ACTIONS = ("worked", "stuck", "open_ticket", "talk_to_rep", "follow_up",
+                "ticket_details", "confirm_ticket", "cancel_ticket")
 
-# Offered after steps, and after an escalation. Deterministic per stage, so the
-# buttons and the stage can never disagree.
-_QR_AFTER_STEPS = [{"label": "That fixed it", "action": "worked"},
-                   {"label": "I am stuck on a step", "action": "stuck"}]
+# Offered after an escalation. Deterministic per stage, so the buttons and the stage
+# can never disagree. There are deliberately NO buttons after troubleshooting steps:
+# the customer's reply is read instead (see the follow_up action).
 _QR_ESCALATE = [{"label": "Open a ticket for me", "action": "open_ticket"},
                 {"label": "Talk to a representative", "action": "talk_to_rep"}]
 
@@ -799,7 +719,9 @@ _QR_ESCALATE = [{"label": "Open a ticket for me", "action": "open_ticket"},
 def _turn(stage, reply, steps=None, quick_replies=None, **extra) -> dict:
     out = {"stage": stage, "reply": reply, "steps": steps or [],
            "quick_replies": quick_replies or [], "needs_engineer": False,
-           "sources_count": 0, "match_strength": "none", "ticket_draft": None}
+           "sources_count": 0, "match_strength": "none", "sources": [],
+           "resolutions": [], "closing_question": "", "provider_steps": [],
+           "customer_header": "", "provider_header": "", "no_customer_steps_note": ""}
     out.update(extra)
     return out
 
@@ -826,62 +748,46 @@ def _retrieval_query(messages: list) -> str:
         return f"{first} {last}"
     return last
 
+def _overall_steps(groups: list) -> list:
+    """One ordered list of recommended steps, merged from the per-ticket steps.
 
-def _draft_ticket(messages: list) -> dict:
-    """Build a ticket draft from the conversation.
+    This runs on the ALREADY TRANSLATED per-ticket steps, never on the raw tickets, so
+    the isolation guarantee survives: nothing can appear here that did not come from a
+    real recorded resolution, and each step keeps the ticket numbers it came from.
 
-    Deliberately NOT written to ServiceNow. This app's write surface is exactly two
-    operations (post_comment and reassign), and creating incidents would be a third,
-    which is a product decision rather than an implementation detail. So the draft is
-    returned for a human to submit and the response says plainly that nothing was
-    filed.
+    If the merge fails, the per-ticket steps are still shown in the dropdown, so the
+    customer is never left with nothing.
     """
-    said = [str(m.get("content", "")).strip() for m in (messages or [])
-            if m.get("role") == "user" and str(m.get("content", "")).strip()]
-    summary = said[0] if said else "Customer-reported issue"
-    transcript = "\n".join(f"Customer: {s}" for s in said)
-    return {
-        "short_description": summary[:160],
-        "description": ("Raised from a customer self-service conversation.\n\n"
-                        f"{transcript}"),
-        "submitted": False,
-        "note": ("This is a draft only. Nothing has been created in ServiceNow. "
-                 "An agent must review and submit it."),
-    }
-
-
-def _customer_steps(question: str, messages: list, results: list) -> dict:
-    """Translate internal resolutions into customer-safe steps.
-
-    There is deliberately NO verbatim fallback here, unlike the agent-facing paths.
-    Quoting an engineer's close notes to a subscriber would leak internal system
-    names and other customers' identifiers, and would tell them to do things only an
-    employee can do. When the model is unavailable the honest answer is no steps,
-    which routes the conversation to a ticket or a rep.
-    """
-    user_prompt = prompts.build_customer_chat_user_prompt(question, messages, results)
+    if not groups:
+        return []
     try:
-        raw = _chat(prompts.CUSTOMER_CHAT_SYSTEM_PROMPT, user_prompt,
-                    max_tokens=900, temperature=0.3)
+        raw = _chat(prompts.OVERALL_STEPS_SYSTEM_PROMPT,
+                    prompts.build_overall_steps_user_prompt(groups),
+                    max_tokens=700, temperature=0)
         data = _parse_json(raw)
-        steps = []
-        for s in (data.get("steps") or []):
-            text = str(s.get("text", "")).strip() if isinstance(s, dict) else str(s).strip()
-            if text:
-                steps.append({"text": text,
-                              "needs_engineer": bool(s.get("needs_engineer")) if isinstance(s, dict) else False})
-        return {"reply": str(data.get("reply", "")).strip(),
-                "steps": steps[:5],
-                "needs_engineer": bool(data.get("needs_engineer_overall")),
-                "closing_question": str(data.get("closing_question", "")).strip(),
-                "ai_available": True}
     except Exception as e:
-        print(f"[CHAT] customer step generation unavailable: {e}")
-        return {"reply": "", "steps": [], "needs_engineer": True,
-                "closing_question": "", "ai_available": False}
+        print(f"[CHAT] consolidated step generation failed: {e}")
+        return []
+
+    valid = {g["number"] for g in groups}
+    out = []
+    for item in (data.get("steps") or []):
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        # Only citations pointing at tickets we actually retrieved are kept, so a
+        # fabricated reference cannot reach the screen.
+        cites = [c for c in (item.get("from") or []) if str(c).strip() in valid]
+        out.append({"text": text,
+                    "needs_engineer": bool(item.get("needs_engineer")),
+                    "from": cites})
+    return out[:6]
 
 
-def chat_turn(messages: list, action: str = "") -> dict:
+def chat_turn(messages: list, action: str = "", tried_steps: list = None,
+              suggested_steps: list = None, known_fields: dict = None) -> dict:
     """One assistant turn. Stateless: the client sends the whole conversation.
 
     Read-only. Nothing in this path writes to ServiceNow.
@@ -891,28 +797,39 @@ def chat_turn(messages: list, action: str = "") -> dict:
 
     if action == "worked":
         return _turn("resolved",
-                     "That is great to hear. I will close this off here. If the problem "
-                     "comes back, just start a new message and we will pick it up again.")
+                     "Good, glad that sorted it. If it comes back, just start a new message "
+                     "and we will pick it up again.")
 
     if action == "talk_to_rep":
         return _turn("rep",
-                     "No problem. I will pass you to a representative who can pick this up "
-                     "with you directly. Please hold while I connect you.",
+                     "No problem. I am putting you through to someone now. Please hold.",
                      handoff=True)
 
-    if action == "open_ticket":
-        draft = _draft_ticket(messages)
-        return _turn("ticket_draft",
-                     "I have put together a summary of the problem for our support team. "
-                     "One of our agents will review it and get in touch.",
-                     quick_replies=[{"label": "Talk to a representative", "action": "talk_to_rep"}],
-                     ticket_draft=draft)
+    if action in ("open_ticket", "ticket_details", "confirm_ticket", "cancel_ticket"):
+        return _ticket_flow(messages, action, tried_steps, suggested_steps,
+                            known_fields)
+
+    if action == "follow_up":
+        # The "That fixed it" / "I am stuck" buttons were removed, so the customer's
+        # own words decide what happens next: close the conversation, or move towards
+        # raising a ticket.
+        msg = _last_user_message(messages)
+        intent = _followup_intent(msg, _last_assistant_steps(messages))
+        if intent == "resolved":
+            return _turn("resolved",
+                         "Good, glad that sorted it. If it comes back, just start a new "
+                         "message and we will pick it up again.")
+        if intent == "wants_ticket":
+            # They asked for a ticket outright, so do not offer one again.
+            return _ticket_flow(messages, "open_ticket", tried_steps,
+                                suggested_steps, known_fields)
+        return _turn("escalate",
+                     "If it's still not working, let us raise a ticket for you.",
+                     quick_replies=_QR_ESCALATE, needs_engineer=True)
 
     if action == "stuck":
         return _turn("escalate",
-                     "Thanks for trying those. This one looks like it needs someone on our "
-                     "side to take a proper look at your account. I can raise it with our "
-                     "support team, or put you through to a representative now.",
+                     "If it's still not working, let us raise a ticket for you.",
                      quick_replies=_QR_ESCALATE, needs_engineer=True)
 
     question = _last_user_message(messages)
@@ -938,39 +855,576 @@ def chat_turn(messages: list, action: str = "") -> dict:
     usable = [r for r in results if r["similarity"] >= SEARCH_MIN_SIM][:SEARCH_TOP_N]
     if not usable:
         return _turn("no_match",
-                     "I could not find anything in our records that matches this closely "
-                     "enough for me to suggest a reliable fix. I would rather get it in front "
-                     "of someone who can look at your account properly than guess. I can raise "
-                     "a ticket for you, or connect you to a representative.",
+                     "I could not find a close enough match in our records to suggest a "
+                     "fix, and I do not want to guess. I can raise a ticket for you, or put "
+                     "you through to someone who can help.",
                      quick_replies=_QR_ESCALATE,
                      top_similarity=results[0]["similarity"] if results else 0.0)
 
-    gen = _customer_steps(question, messages, usable)
+    groups = _per_ticket_resolutions(usable)
     top_sim = usable[0]["similarity"]
 
-    # Steps were found: present them and ask whether they worked.
-    if gen["steps"]:
-        reply = gen["reply"] or "Here is what has resolved this for other customers."
-        if gen["closing_question"]:
-            reply = f"{reply}\n\n{gen['closing_question']}"
-        return _turn("troubleshoot", reply, steps=gen["steps"],
-                     quick_replies=_QR_AFTER_STEPS,
-                     needs_engineer=gen["needs_engineer"],
-                     sources_count=len(usable),
+    if groups:
+        # Every word around the steps is written here rather than by the model, so a
+        # reply cannot acquire an apology, sympathy or any other filler.
+        overall = _overall_steps(groups)
+        customer_steps = [s for s in overall if not s["needs_engineer"]]
+        provider_steps = [s for s in overall if s["needs_engineer"]]
+        return _turn("troubleshoot", RESOLUTION_HEADER,
+                     steps=customer_steps,
+                     provider_steps=provider_steps,
+                     customer_header=CUSTOMER_STEPS_HEADER,
+                     provider_header=PROVIDER_STEPS_HEADER,
+                     no_customer_steps_note=("" if customer_steps else NO_CUSTOMER_STEPS_NOTE),
+                     resolutions=groups,
+                     closing_question=RESOLUTION_QUESTION,
+                     sources_count=len(groups),
                      match_strength=_strength(top_sim),
-                     top_similarity=top_sim,
-                     ai_available=gen["ai_available"])
+                     top_similarity=top_sim)
 
-    # Matches exist but nothing the customer can do themselves, or the model is
-    # unavailable and we will not quote internal notes at a customer.
-    reply = gen["reply"] or (
-        "I can see we have handled problems like this before, but it is not something "
-        "you can fix from your end. It needs one of our team to make a change for you. "
-        "I can raise a ticket, or put you through to a representative."
-        if gen["ai_available"] else
-        "I found similar cases in our records, but I am not able to write them up for you "
-        "right now. Rather than guess, let me get this to someone who can help properly. "
-        "I can raise a ticket, or connect you to a representative.")
-    return _turn("escalate", reply, quick_replies=_QR_ESCALATE, needs_engineer=True,
+    # Tickets matched but none of them yielded usable steps.
+    return _turn("escalate",
+                 "I found similar cases, but none of them has a fix recorded that I can pass "
+                 "on. I can raise a ticket for you, or put you through to someone who can help.",
+                 quick_replies=_QR_ESCALATE, needs_engineer=True,
+                 sources=_source_tickets(usable),
                  sources_count=len(usable), match_strength=_strength(top_sim),
-                 top_similarity=top_sim, ai_available=gen["ai_available"])
+                 top_similarity=top_sim)
+
+
+# ── ticket creation flow ──────────────────────────────────────────────────────
+#
+# Collect, validate, review, confirm. The product owner's requirements, which the
+# code below follows literally:
+#   * the customer can give every detail in ONE message
+#   * the system verifies whether everything required is present
+#   * anything missing is named EXPLICITLY, field by field, and asked for again
+#   * nothing is ever assumed or auto-populated
+#   * the completed ticket is shown back for review BEFORE anything is created
+#   * the incident is created only once every required field is present and validated
+#
+# PROVISIONAL FIELD LIST. The owner asked for the required fields to be read from
+# the ServiceNow instance itself. That instance is being replaced, so this list is
+# the working set until it can be read. Run backend/discover_required_fields.py
+# against the new instance and update this one list; nothing else needs to change.
+#
+# `sn_field` is where the value lands on the incident. Fields with sn_field None are
+# still written, inside the labelled description block, because this app parses its
+# structured data out of labelled text anyway (see servicenow_client._parse_block),
+# so a ticket created here stays machine readable by the same app later.
+
+REQUIRED_TICKET_FIELDS = [
+    {"key": "short_description", "label": "Short description",
+     "hint": "for example, modem has a red light and no internet",
+     "sn_field": "short_description"},
+    {"key": "full_name", "label": "Your full name", "hint": None, "sn_field": None},
+    {"key": "account_number", "label": "Your account number", "hint": None, "sn_field": None},
+    {"key": "contact_phone", "label": "A contact phone number", "hint": None, "sn_field": None},
+    {"key": "contact_email", "label": "A contact email address", "hint": None, "sn_field": None},
+    {"key": "service_affected", "label": "Which service is affected",
+     "hint": "internet, phone, or both", "sn_field": None},
+]
+
+_FIELD_BY_KEY = {f["key"]: f for f in REQUIRED_TICKET_FIELDS}
+
+# Values that mean "not provided" rather than being an answer.
+_NULLISH = {"", "n/a", "na", "none", "null", "-", "unknown", "dont know", "don't know",
+            "not sure", "no idea", "tbd"}
+
+
+def _user_messages(messages: list) -> list:
+    return [str(m.get("content", "")).strip() for m in (messages or [])
+            if m.get("role") == "user" and str(m.get("content", "")).strip()]
+
+
+def _clean_value(v) -> str:
+    s = " ".join(str(v or "").split())
+    return "" if s.lower() in _NULLISH else s
+
+
+def _extract_labelled(messages: list) -> dict:
+    """Pull out values the customer labelled themselves ("Name: Jane Smith").
+
+    Deterministic and therefore available even when the model is not. It can only
+    ever read a label the customer typed, so it cannot invent a value, which is the
+    property that matters here. Free-form messages fall through to the model.
+    """
+    found = {}   # key -> {"value", "index"}, index being the user message it came from
+    # Match a field by its key, or by the significant words of its label, so both
+    # "account_number:" and "Account number:" are understood.
+    aliases = {}
+    for f in REQUIRED_TICKET_FIELDS:
+        keys = {f["key"], f["key"].replace("_", " ")}
+        label = f["label"].lower()
+        for prefix in ("your ", "a ", "which "):
+            if label.startswith(prefix):
+                label = label[len(prefix):]
+        keys.add(label)
+        if f["key"] == "short_description":
+            keys |= {"summary", "problem", "issue", "short description", "short desc",
+                     "details", "description", "what happened"}
+        if f["key"] == "full_name":
+            keys |= {"name"}
+        if f["key"] == "account_number":
+            keys |= {"account", "account no", "account #", "ban"}
+        if f["key"] == "contact_phone":
+            keys |= {"phone", "phone number", "contact number", "mobile", "telephone"}
+        if f["key"] == "contact_email":
+            keys |= {"email", "email address", "e-mail"}
+        if f["key"] == "service_affected":
+            keys |= {"service", "affected service"}
+        for k in keys:
+            aliases[k] = f["key"]
+
+    pattern = re.compile(r"^\s*([A-Za-z][A-Za-z /#'()-]{1,40}?)\s*[:\-]\s*(.+?)\s*$")
+    for idx, msg in enumerate(_user_messages(messages)):
+        for line in msg.splitlines():
+            m = pattern.match(line)
+            if not m:
+                continue
+            label = " ".join(m.group(1).split()).lower().strip(" #")
+            key = aliases.get(label)
+            if not key:
+                continue
+            val = _clean_value(m.group(2))
+            if val:
+                found[key] = {"value": val, "index": idx}   # a later message wins
+    return found
+
+
+def _extract_with_model(messages: list) -> dict:
+    """Model-based extraction for free-form messages. Returns {} if unavailable."""
+    user_prompt = prompts.build_ticket_extract_user_prompt(
+        REQUIRED_TICKET_FIELDS, _user_messages(messages))
+    try:
+        raw = _chat(prompts.TICKET_EXTRACT_SYSTEM_PROMPT, user_prompt,
+                    max_tokens=700, temperature=0)
+        data = _parse_json(raw)
+    except Exception as e:
+        print(f"[CHAT] ticket extraction unavailable: {e}")
+        return {}
+    out = {}
+    for f in REQUIRED_TICKET_FIELDS:
+        val = _clean_value(data.get(f["key"]))
+        if val:
+            out[f["key"]] = val
+    return out
+
+
+# Which service a problem is about, worked out from the customer's own words rather
+# than asked for. "my modem has a red light" is plainly an internet problem, and
+# making someone answer a question they have already answered is friction.
+#
+# This is a DERIVATION, not an assumption: it only ever fires on words the customer
+# actually wrote, it only fills the field when nothing else supplied it, and it is
+# shown in the review table so they can correct it before anything is raised. Where
+# a problem mentions both sides, it says "both" rather than picking one.
+_INTERNET_WORDS = (
+    "modem", "internet", "wifi", "wi-fi", "broadband", "router", "online",
+    "website", "web site", "browsing", "speed", "data", "connection drop",
+    "no connection", "wan", "ethernet", "hub",
+)
+_PHONE_WORDS = (
+    "phone", "dial tone", "dialtone", "call", "calls", "calling", "voice",
+    "handset", "landline", "busy signal", "ring", "voicemail", "echo",
+    "audio", "caller", "hang up", "hung up",
+)
+
+
+def _infer_service(messages: list, short_description: str = "") -> str:
+    """'internet', 'phone', 'both', or '' when the words do not say."""
+    text = " ".join([short_description] + _user_messages(messages)).lower()
+    if not text.strip():
+        return ""
+    net = any(w in text for w in _INTERNET_WORDS)
+    voice = any(w in text for w in _PHONE_WORDS)
+    if net and voice:
+        return "both"
+    if net:
+        return "internet"
+    if voice:
+        return "phone"
+    return ""
+
+
+def extract_ticket_fields(messages: list, known: dict = None) -> tuple:
+    """Collect what the customer has given. Returns (fields, missing_keys).
+
+    Collection is MONOTONIC: a field that has already been captured is carried
+    forward and can only be replaced by the customer giving a new value, never
+    silently lost. Without this the flow regressed, because each turn re-derived
+    every field from the whole transcript and the model is not perfectly consistent
+    between calls. A customer who had already been told "I have your affected
+    service" could be asked for it again two messages later, which is exactly the
+    behaviour the product owner reported.
+
+    Carrying forward must not make a value IMMUTABLE. A customer who mistypes their
+    account number has to be able to correct it, so a newly found value always wins
+    over a carried one. The carried value only fills a gap where this turn found
+    nothing, which is precisely the regression being guarded against.
+
+    Precedence is by RECENCY, not by format. An earlier labelled line such as
+    "account number- 123456789" must not outrank a later correction written in prose
+    ("actually my account number is 777000111"), which is what happens if labelled
+    values are treated as authoritative simply because they are unambiguous.
+
+    Strongest first:
+      1. a value LABELLED in the customer's most recent message, which is both
+         explicit and the latest thing they said
+      2. a value the model read from the transcript, which is recency aware because
+         the prompt tells it to take the most recent mention
+      3. a value LABELLED in an earlier message
+      4. a value established on an earlier turn, filling only what this turn missed
+    """
+    carried = {k: _clean_value(v) for k, v in (known or {}).items()
+               if k in _FIELD_BY_KEY and _clean_value(v)}
+
+    labelled = _extract_labelled(messages)
+    last_index = max(0, len(_user_messages(messages)) - 1)
+    latest_labelled = {k: d["value"] for k, d in labelled.items() if d["index"] == last_index}
+    older_labelled = {k: d["value"] for k, d in labelled.items() if d["index"] != last_index}
+
+    # The model runs unless the newest message labelled everything, because free text
+    # is where corrections live and a carried value would otherwise mask them.
+    from_model = {}
+    if len(latest_labelled) < len(REQUIRED_TICKET_FIELDS):
+        from_model = _extract_with_model(messages)
+
+    fields = dict(carried)
+    fields.update(older_labelled)
+    fields.update(from_model)
+    fields.update(latest_labelled)
+
+    # Last resort for the affected service only: derive it from what the customer
+    # described. Runs after everything else, so an explicit answer always wins.
+    if not fields.get("service_affected"):
+        derived = _infer_service(messages, fields.get("short_description", ""))
+        if derived:
+            fields["service_affected"] = derived
+
+    missing = [f["key"] for f in REQUIRED_TICKET_FIELDS if not fields.get(f["key"])]
+    return fields, missing
+
+
+def _field_prompt_lines() -> list:
+    out = []
+    for f in REQUIRED_TICKET_FIELDS:
+        line = f"{f['label']}"
+        if f.get("hint"):
+            line += f" ({f['hint']})"
+        out.append(line)
+    return out
+
+
+def _review_rows(fields: dict) -> list:
+    """The completed ticket as label and value pairs, in the configured order."""
+    return [{"key": f["key"], "label": f["label"], "value": fields.get(f["key"], "")}
+            for f in REQUIRED_TICKET_FIELDS]
+
+
+def build_incident_payload(fields: dict, tried_steps: list = None,
+                           suggested_steps: list = None) -> dict:
+    """Turn validated fields into what create_incident() needs.
+
+    The description opens with a single sentence stating the problem AND the outcome,
+    for example "modem has a red light, tried the recommended steps but still not
+    working", because an agent reading the first line should immediately know that the
+    obvious fixes have already failed. The structured breakdown follows underneath.
+
+    The contact fields stay in a labelled block, which is the same shape
+    servicenow_client._parse_block() reads, so a ticket raised here can be parsed back
+    by this app without a special case.
+    """
+    problem = fields.get("short_description", "").strip().rstrip(".")
+
+    # Attempted and suggested are kept APART on purpose. Listing the provider steps as
+    # "attempted" would tell the agent a technician had already been sent, which is the
+    # opposite of true and would waste the first call.
+    tried = [str(x).strip() for x in (tried_steps or []) if str(x).strip()]
+    suggested = [str(x).strip() for x in (suggested_steps or []) if str(x).strip()]
+
+    opening = (f"{problem}, tried the recommended steps but still not working."
+               if tried else
+               f"{problem}. No self-service steps were available for this issue.")
+
+    body = [opening, "", "Raised from a customer self-service conversation.", ""]
+
+    if tried:
+        body += ["Already attempted by the customer, from the recommended resolutions:"]
+        body += [f"  {i}. {t}" for i, t in enumerate(tried, 1)]
+        body += ["", "Outcome: the customer reported the issue is still not resolved.", ""]
+    if suggested:
+        body += ["Suggested next steps for our team, taken from how similar tickets were "
+                 "resolved. NOT yet carried out:"]
+        body += [f"  {i}. {t}" for i, t in enumerate(suggested, 1)]
+        body += [""]
+
+    contact = []
+    for f in REQUIRED_TICKET_FIELDS:
+        if f["key"] == "short_description":
+            continue
+        val = fields.get(f["key"], "")
+        if val:
+            contact.append(f"{f['label']}: {val}")
+    if contact:
+        body += ["Contact details:"] + contact + [""]
+
+    # No trailing "Description:" section: the opening sentence already states the
+    # problem, and parse_ticket() falls back to synthesising a block from the native
+    # description field for tickets that have no labelled journal entry, so nothing
+    # downstream needs the duplicate.
+    return {"short_description": problem, "description": "\n".join(body).rstrip()}
+
+
+def _ticket_flow(messages: list, action: str, tried_steps: list = None,
+                 suggested_steps: list = None, known_fields: dict = None) -> dict:
+    """The collect, validate, review, confirm sequence for raising a ticket.
+
+    Validation runs again on confirm rather than trusting what the client sends
+    back, for the same reason /fallout/approve re-derives its reassignment target
+    server side: a stale or tampered client must not be able to skip a check.
+    """
+    if action == "cancel_ticket":
+        return _turn("escalate",
+                     "No problem, I have not raised anything. I can put you through to "
+                     "someone if you would rather.",
+                     quick_replies=[{"label": "Talk to a representative", "action": "talk_to_rep"},
+                                    {"label": "Raise a ticket after all", "action": "open_ticket"}])
+
+    fields, missing = extract_ticket_fields(messages, known_fields)
+
+    if action == "open_ticket":
+        # Ask for everything still outstanding. Anything the customer already stated
+        # is carried forward rather than asked for twice, but nothing is filled in on
+        # their behalf.
+        if not missing:
+            return _ticket_review(fields)
+        asks = [_FIELD_BY_KEY[k] for k in missing]
+        lines = [f"  - {f['label']}" + (f" ({f['hint']})" if f.get("hint") else "") for f in asks]
+        have = [f["label"] for f in REQUIRED_TICKET_FIELDS if fields.get(f["key"])]
+        reply = ["I can raise a ticket for you. I just need these details, and you can "
+                 "send them all in one message:", ""] + lines
+        if have:
+            reply += ["", "I already have: " + ", ".join(have) + "."]
+        return _turn("ticket_collect", "\n".join(reply),
+                     ticket_fields=_review_rows(fields),
+                     missing_fields=[f["label"] for f in asks],
+                     quick_replies=[{"label": "Cancel", "action": "cancel_ticket"}])
+
+    if action == "ticket_details":
+        if missing:
+            return _ticket_missing(fields, missing)
+        return _ticket_review(fields)
+
+    # confirm_ticket: last gate before the only write this flow performs.
+    if missing:
+        return _ticket_missing(fields, missing)
+    payload = build_incident_payload(fields, tried_steps, suggested_steps)
+    try:
+        created = servicenow_client.create_incident(
+            short_description=payload["short_description"],
+            description=payload["description"],
+        )
+    except Exception as e:
+        print(f"[CHAT] incident creation failed: {e}")
+        return _turn("ticket_failed",
+                     "I could not raise the ticket just now. Nothing was created and your "
+                     "details are safe. Let me put you through to someone who can raise it.",
+                     quick_replies=[{"label": "Talk to a representative", "action": "talk_to_rep"},
+                                    {"label": "Try again", "action": "confirm_ticket"}],
+                     ticket_fields=_review_rows(fields),
+                     error=str(e)[:200])
+
+    number = created.get("number", "")
+    reply = (f"Your ticket is raised. The reference is {number}. Our team will be in touch "
+             f"using the contact details you gave."
+             if number else
+             "Your ticket is raised. Our team will be in touch.")
+    if created.get("warning"):
+        print(f"[CHAT] {created['warning']}")
+    return _turn("ticket_created", reply,
+                 ticket_fields=_review_rows(fields),
+                 created_ticket={"number": number, "url": created.get("url", ""),
+                                 "assignment_group": created.get("assignment_group", "")})
+
+
+def _ticket_missing(fields: dict, missing: list) -> dict:
+    """Name exactly what is outstanding. Never fills a gap, never hints at a value."""
+    asks = [_FIELD_BY_KEY[k] for k in missing]
+    lines = [f"  - {f['label']}" + (f" ({f['hint']})" if f.get("hint") else "") for f in asks]
+    noun = "one more detail" if len(asks) == 1 else f"{len(asks)} more details"
+    have = [f["label"] for f in REQUIRED_TICKET_FIELDS if fields.get(f["key"])]
+    reply = [f"Thanks. I still need {noun} before I can raise this:", ""] + lines
+    if have:
+        reply += ["", "Already noted: " + ", ".join(have) + "."]
+    return _turn("ticket_missing", "\n".join(reply),
+                 ticket_fields=_review_rows(fields),
+                 missing_fields=[f["label"] for f in asks],
+                 quick_replies=[{"label": "Cancel", "action": "cancel_ticket"}])
+
+
+def _ticket_review(fields: dict) -> dict:
+    """Show the completed ticket back before anything is created."""
+    return _turn("ticket_review",
+                 "Here is everything I have. Check it over and I will raise the ticket once "
+                 "you confirm.",
+                 ticket_fields=_review_rows(fields),
+                 quick_replies=[{"label": "Confirm and raise ticket", "action": "confirm_ticket"},
+                                {"label": "Cancel", "action": "cancel_ticket"}])
+
+
+# ── source tickets and follow-up reading ──────────────────────────────────────
+
+def _source_tickets(results: list) -> list:
+    """The resolved tickets a reply was built from, for the expandable panel.
+
+    Shown so the agent, or the person being demoed to, can see exactly which
+    historical tickets produced the answer and how close each one was. The
+    similarity is the real retrieval score, never a rounded-up presentation number.
+    """
+    out = []
+    for r in results:
+        m = r["metadata"]
+        out.append({
+            "number": m.get("number", ""),
+            "similarity": r["similarity"],
+            "subcategory": m.get("subcategory", ""),
+            "resolution_code": m.get("resolution_code", ""),
+            "short_description": m.get("short_description", ""),
+            "description": m.get("description", ""),
+            "resolution": m.get("resolution_notes", ""),
+            "state": m.get("state", ""),
+        })
+    return out
+
+
+# Unambiguous replies, read without spending a model call. Ordered so that a
+# negative phrase wins: "thanks, still not working" must not be read as resolved
+# just because it contains "thanks".
+_UNRESOLVED_MARKERS = (
+    "not work", "doesnt work", "does not work", "didnt work", "did not work",
+    "still not", "still down", "still broken", "still no", "no luck", "nope",
+    "not fixed", "same problem", "same issue", "worse", "stuck", "cant ", "can not",
+    "cannot", "failed", "no change", "nothing happened", "not sure how", "how do i",
+)
+# An explicit request for a ticket goes straight into the creation flow rather than
+# being answered with another offer. Checked BEFORE the resolved markers so that
+# "no thanks, just raise a ticket" is not read as gratitude.
+_TICKET_MARKERS = (
+    "create a ticket", "create a new ticket", "raise a ticket", "raise a new ticket",
+    "open a ticket", "open a new ticket", "log a ticket", "new ticket", "raise it",
+    "raise this", "make a ticket", "file a ticket", "want a ticket", "ticket please",
+)
+_RESOLVED_MARKERS = (
+    "that worked", "it worked", "worked now", "working now", "its working",
+    "it is working", "all good", "all set", "sorted", "fixed now", "that fixed",
+    "its fixed", "it is fixed", "resolved now", "back online", "back up",
+    "thank you", "thanks", "cheers", "perfect", "great, that", "yes that",
+)
+
+
+def _followup_intent(message: str, last_steps: list) -> str:
+    """Did the steps work? Returns 'resolved' or 'unresolved'.
+
+    The keyword pass runs first because it is free, instant, and certain on the
+    phrasings people actually use. The model is consulted only for genuinely
+    ambiguous replies. Any failure resolves to 'unresolved', which keeps helping
+    the customer rather than closing the conversation on someone still broken.
+    """
+    text = " ".join((message or "").lower().split())
+    if not text:
+        return "unresolved"
+    if any(k in text for k in _TICKET_MARKERS):
+        return "wants_ticket"
+    if any(k in text for k in _UNRESOLVED_MARKERS):
+        return "unresolved"
+    if any(k in text for k in _RESOLVED_MARKERS):
+        return "resolved"
+    try:
+        raw = _chat(prompts.FOLLOWUP_INTENT_SYSTEM_PROMPT,
+                    prompts.build_followup_intent_user_prompt(message, last_steps),
+                    max_tokens=60, temperature=0)
+        intent = str(_parse_json(raw).get("intent", "")).strip().lower()
+        return intent if intent in ("resolved", "wants_ticket") else "unresolved"
+    except Exception as e:
+        print(f"[CHAT] follow-up intent unavailable: {e}")
+        return "unresolved"
+
+
+def _last_assistant_steps(messages: list) -> list:
+    """The steps the customer is replying to, for the classifier's context."""
+    for m in reversed(messages or []):
+        if m.get("role") == "assistant":
+            return [s for s in str(m.get("content", "")).splitlines() if s.strip()]
+    return []
+
+
+# ── per-ticket resolutions (traceable generation) ─────────────────────────────
+#
+# Each retrieved ticket is converted to steps in ITS OWN model call, seeing only its
+# own resolution. That is the whole point: the previous design passed all three
+# resolutions in one prompt and asked for a single merged answer, so a step could
+# come from anywhere and nothing shown to the customer could be traced back to a
+# source. Isolation costs one call per ticket and buys a guarantee.
+#
+# The prose around the steps is written HERE, not by the model, so no apology,
+# sympathy or filler can appear in a reply.
+
+RESOLUTION_HEADER = "Based on previous tickets, here are the recommended resolution steps:"
+RESOLUTION_QUESTION = "Has this resolved your issue?"
+
+# The steps are split by WHO performs them, because a single interleaved list reads
+# badly: step 1 asks the customer to do something, step 2 says we will do something,
+# and the reader cannot tell what is actually being asked of them. Customer actions
+# come first as things to try; provider actions are framed as the fallback.
+CUSTOMER_STEPS_HEADER = "Try these steps:"
+PROVIDER_STEPS_HEADER = "If those don't work:"
+NO_CUSTOMER_STEPS_NOTE = "There is nothing to try from your end on this one."
+
+
+def _steps_for_one(meta: dict) -> dict:
+    """Steps for a single ticket, derived only from that ticket's resolution."""
+    try:
+        raw = _chat(prompts.TICKET_STEPS_SYSTEM_PROMPT,
+                    prompts.build_ticket_steps_user_prompt(meta),
+                    max_tokens=600, temperature=0)
+        data = _parse_json(raw)
+        steps = []
+        for s in (data.get("steps") or []):
+            text = str(s.get("text", "")).strip() if isinstance(s, dict) else str(s).strip()
+            if text:
+                steps.append({"text": text,
+                              "needs_engineer": bool(s.get("needs_engineer")) if isinstance(s, dict) else False})
+        return {"steps": steps[:5], "summary": str(data.get("summary", "")).strip()}
+    except Exception as e:
+        print(f"[CHAT] step generation failed for {meta.get('number', '?')}: {e}")
+        return {"steps": [], "summary": ""}
+
+
+def _per_ticket_resolutions(results: list) -> list:
+    """One resolution group per retrieved ticket, each carrying its own citation.
+
+    A group with no steps is dropped rather than shown empty, so the customer never
+    sees a ticket heading with nothing under it.
+    """
+    groups = []
+    for r in results:
+        meta = r["metadata"]
+        gen = _steps_for_one(meta)
+        if not gen["steps"]:
+            continue
+        groups.append({
+            "number": meta.get("number", ""),
+            "similarity": r["similarity"],
+            "subcategory": meta.get("subcategory", ""),
+            "resolution_code": meta.get("resolution_code", ""),
+            "short_description": meta.get("short_description", ""),
+            "state": meta.get("state", ""),
+            "cause": gen["summary"],
+            "steps": gen["steps"],
+            # The ticket's own recorded text, shown in the dropdown so the generated
+            # steps can be checked against the source directly.
+            "root_cause": meta.get("description", ""),
+            "resolution": meta.get("resolution_notes", ""),
+        })
+    return groups

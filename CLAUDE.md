@@ -4,190 +4,330 @@ Guidance for Claude Code (and humans) working in this repository.
 
 ## What this is
 
-**RCA-TicketGenie** is a **ServiceNow order-fallout remediation assistant** for a
-telecom OSS/BSS context. For each *open* fallout ticket it retrieves the most
-similar *closed* tickets, validates the current system state with a deterministic
-check, and produces a recommended resolution + remediation. A human agent reviews
-it and, on approval, the exact recommendation is posted **as a comment** on the
-ServiceNow ticket.
+**TicketGenie** is a **customer-facing telecom support assistant**. A customer
+describes a problem in their own words, the app retrieves the most similar *resolved*
+tickets, and it replies with steps to try. If the steps work, the conversation closes.
+If the customer is stuck, or the fix needs an engineer, it offers to raise a ticket or
+pass them to a representative. Raising a ticket collects every required field,
+validates them, shows the completed ticket for review, and only then creates the
+incident in ServiceNow.
 
-**Human-in-the-loop.** The app NEVER closes, resolves, or transitions a ticket.
-It performs exactly two writes, both only on human approval: posting a **comment**,
-and — for tickets matching a redirect rule (currently Buy Flow) — **reassigning**
-the ticket to the owning team by setting `assignment_group`. Approval posts the
-*exact* text the agent saw/edited — the LLM is not re-run on approve.
+An **internal path** is retained behind the same input: typing a bare incident number
+(`INC0010020`) returns the full order-fallout recommendation pipeline, including the
+deterministic validation checks, Buy Flow redirect routing, and the approve bar that
+posts a comment or reassigns. Customers never type an incident number; this keeps the
+ServiceNow comment and reassignment features reachable without a separate UI.
 
-> The reassignment is an explicit, owner-approved exception to what was previously
-> a comment-only rule. Buy Flow tickets are genuinely moved to `BUYFLOW TEAM`;
-> every other fallout family remains recommend-plus-comment.
-
-> History note: this replaced an earlier Jira + LangGraph triage app. Anything
-> referencing Jira, LangGraph, a chat UI, or voice/Whisper is vestigial. Two old
-> endpoints (`/transcribe`, `/add-to-watchlist`) and `data_manager.py` still exist
-> in the backend but nothing in the current UI calls them.
+> History note: this began as a Jira + LangGraph triage app, became a ServiceNow
+> order-fallout remediation assistant for internal agents, and is now customer facing.
+> The order-fallout machinery still exists and works, reached by incident number.
+> Anything referencing Jira, LangGraph, voice, or Whisper has been removed.
 
 ## Architecture
 
 ```
-ServiceNow (incidents)          Incidents spreadsheet (data/*.xlsx)
-   │  OPEN queue only              │  CLOSED rows only — the knowledge base
-   │  parse the labelled block      │  column headers auto-mapped by kb_source
-   │  inside `comments`             │
-   ▼                                ▼
-Backend (FastAPI, backend/)
-   ├─ servicenow_client.py   read OPEN queue + post_comment (never closes)
-   ├─ kb_source.py           loads the CLOSED KB from the incidents spreadsheet
-   ├─ fallout_store.py       ChromaDB + BM25 hybrid search over CLOSED tickets (the KB)
-   ├─ fallout_engine.py      recommend(): retrieve → route tool → validate → generate → decide
-   ├─ validation_tools.py    @tool registry — deterministic system-state checks
+ServiceNow                        data/demo_support_tickets.json
+   │  closed incidents in the        │  18 resolved support tickets, the source
+   │  demo group (KB_SOURCE          │  of truth, authored by the product owner
+   │  =servicenow), plus the         │
+   │  internal open queue            ▼
+   │                              make_demo_kb.py -> demo_support_tickets.xlsx
+   ▼                                 │  (KB_SOURCE=spreadsheet, and the fallback)
+Backend (FastAPI, backend/)          ▼
+   ├─ servicenow_client.py   read, post_comment, reassign, create_incident
+   ├─ kb_source.py           loads the KB from the spreadsheet
+   ├─ fallout_store.py       ChromaDB + BM25 hybrid search; KB_SOURCE selector
+   ├─ fallout_engine.py      chat_turn() for customers, recommend() for agents
+   ├─ validation_tools.py    @tool registry, deterministic system-state checks
    ├─ routing_store.py       deterministic redirect rules (data/routing_rules.json)
-   ├─ provisioning_store.py  LOC-/SVC-keyed inventory (data/provisioning_data.json)
-   ├─ oms_store.py           BAN-/order-keyed BOSS OMS inventory (data/oms_data.json)
-   ├─ prompts.py             all LLM system prompts + user-prompt builders
+   ├─ provisioning_store.py  LOC-/SVC-keyed inventory
+   ├─ oms_store.py           BAN-/order-keyed BOSS OMS inventory
+   ├─ prompts.py             all LLM system prompts and user-prompt builders
    ├─ fallout_api.py         /fallout/* endpoints
-   ├─ fake_tickets.py        synthetic demo tickets (data/fake_tickets.json)
-   └─ mcp_server.py          exposes the same checks as MCP tools
+   ├─ fake_tickets.py        synthetic demo tickets for the internal queue
+   ├─ make_demo_kb.py        JSON dataset -> KB spreadsheet
+   ├─ seed_demo_tickets.py   creates the demo group and seeds the 18 as closed
+   ├─ discover_required_fields.py   reads mandatory incident fields from an instance
+   └─ mcp_server.py          exposes the validation checks as MCP tools
    ▼
 Frontend (React + Vite + Tailwind, frontend/)
-   ├─ App.jsx                state container (queue → recommend → approve)
-   ├─ components/QueueSidebar.jsx        open queue
-   ├─ components/RecommendationView.jsx  the recommendation + approve/edit bar
-   ├─ components/SimilarTicket.jsx       expandable historical-match breakdown
+   ├─ App.jsx                      greeting, then the conversation
+   ├─ components/ChatComposer.jsx  the single input, Enter sends
+   ├─ components/ChatTurn.jsx      bubbles, steps, ticket fields, quick replies
+   ├─ components/RecommendationView.jsx  internal agent view (incident numbers)
+   ├─ components/SimilarTicket.jsx       expandable historical match
    └─ components/ui.jsx                  shared presentational primitives
 ```
 
-### The recommendation pipeline (`fallout_engine.recommend`)
+## The customer conversation (`fallout_engine.chat_turn`)
 
-0. **REDIRECT pre-route** (deterministic, before anything else). `routing_store`
-   matches the ticket against `data/routing_rules.json`. A hit — e.g. a **Buy Flow**
-   ticket — short-circuits the whole pipeline: the recommendation becomes *reassign
-   to the owning team*, with fixed steps and no LLM involvement. "Every Buy Flow
-   ticket goes to the Buy Flow team" is a business rule, so it must not depend on
-   retrieval quality or model judgement. Everything below runs only for tickets this
-   queue actually owns.
-1. **RETRIEVE** top-K similar *closed* tickets via hybrid search.
-2. **ROUTE** — an LLM router reads how those tickets were resolved + the available
-   tools and picks WHICH validation tool to run and which identifiers to pull.
-3. **VALIDATE** — the chosen tool runs **deterministically** and returns a verdict
-   (`confirmed` / `ambiguous` / `not_confirmed`). If no tool fits but grounding is
-   strong, the verdict is `not_applicable` (neutral, not a failure).
-4. **GENERATE** — a *Resolution* (history-only, from the top-3 matches; always
-   produced) and a *Remediation* (validation-driven; only when a tool ran).
-5. **DECIDE** — `recommend` vs `needs_review`, with a confidence level.
+Stateless. The client sends the whole transcript on every turn, so there is no session
+store to keep in sync.
 
-The LLM **routes and writes prose**; the **verdict and pulled identifiers are
-deterministic**. Retrieval confidence gate: `SIM_STRONG = 0.60`.
+**Control flow is deterministic; the model only writes prose.** Intent comes from the
+quick-reply button the customer pressed, never from asking a model to interpret free
+text. So "that fixed it" cannot be misread as "I am stuck", and the conversation keeps
+working when the model is unavailable. Free text is always treated as describing a
+problem, which is the safe default.
+
+Stages the client renders:
+
+| Stage | Meaning |
+| --- | --- |
+| `troubleshoot` | Resolutions found, grouped by source ticket. No buttons: the reply is read |
+| `no_match` | Nothing close enough in the KB. Offers a ticket or a rep |
+| `escalate` | Customer is stuck, or the fix needs our side. Offers a ticket or a rep |
+| `resolved` | Customer confirmed it is fixed. Conversation closed |
+| `ticket_collect` | Listing the fields needed to raise a ticket |
+| `ticket_missing` | Naming exactly which fields are still outstanding |
+| `ticket_review` | The completed ticket, shown for approval before creation |
+| `ticket_created` | The incident exists. Shows its real number |
+| `ticket_failed` | Creation failed. Nothing was created |
+| `ticket_lookup` | An incident number was typed. Returns the internal pipeline |
+
+Actions: `worked`, `stuck`, `open_ticket`, `talk_to_rep`, `follow_up`,
+`ticket_details`, `confirm_ticket`, `cancel_ticket`.
+
+**After resolutions are shown there are no buttons.** The customer's reply is read by
+`_followup_intent()`, which returns `resolved`, `wants_ticket`, or `unresolved`. An
+unambiguous keyword pass runs first, free and instant, and the model is consulted only
+for genuinely ambiguous wording. Ticket markers are checked **before** resolved markers,
+so "no thanks, just raise a ticket" is not mistaken for gratitude. A reply such as
+"No, I want to create a new ticket" goes straight into collection without being offered
+a ticket again. Anything unclear resolves to `unresolved`, because continuing to help
+someone already fixed is a small annoyance while closing the conversation on someone
+still broken is not.
+
+### Generation is per ticket, not blended
+
+The reply is built from **one model call per retrieved ticket**, each seeing only that
+ticket's own resolution.
+
+The earlier design put all three retrieved resolutions into a single prompt and asked
+for one merged set of steps, and did not even include the ticket numbers in the
+context. Steps therefore could not be traced to a source and ran together across
+tickets, which is exactly what the product owner reported. Isolating the calls makes
+cross-contamination **structurally impossible** rather than merely discouraged. It
+costs three calls instead of one and buys a guarantee.
+
+Everything around the steps is written by the application, never the model:
+
+* the opening line is the fixed string `RESOLUTION_HEADER`
+* the closing line is the fixed string `RESOLUTION_QUESTION`
+
+That is why no apology, sympathy or filler can appear. The per-ticket prompt also
+forbids greetings, sign-offs and commentary outright.
+
+Each group carries its own citation (ticket number, similarity, issue type, cause), and
+the expandable sources panel shows the raw ticket text underneath, so a reader can
+compare the generated steps against the recorded resolution directly.
+
+### Retrieval ordering was evaluated, not assumed
+
+`search()` fuses semantic and keyword results with Reciprocal Rank Fusion, then sorts
+the merged list by **true cosine similarity** rather than by the RRF score. Both
+orderings were measured against all 18 tickets: each returns the exactly correct
+ticket first for 17 of 18 queries, and they agree on every single query. Cosine
+ordering is kept because the relevance thresholds are calibrated against cosine.
+
+### No verbatim fallback in the customer path
+
+The agent-facing paths quote an engineer's recorded close notes when the model is
+unavailable, which is a good fallback there. **The customer path must not do this.**
+The knowledge base was written by engineers for engineers, so quoting it at a
+subscriber would leak internal system names and other customers' identifiers, and
+would instruct them to do things only an employee can do. When the model is
+unavailable the customer path returns **zero steps** and routes to a ticket or a rep.
+This is enforced in `_customer_steps()` and is a safety rule, not a style choice.
+
+## Ticket creation (the third write operation)
+
+The write surface was deliberately two operations, `post_comment` and `reassign`. The
+product owner has signed off on a **third**, incident creation, for the case where the
+knowledge base has no answer.
+
+**Requirements, as stated by the owner and implemented literally:**
+
+1. The customer can give every detail in a single message.
+2. The system verifies whether everything required is present.
+3. Anything missing is named **explicitly, field by field**, and asked for again.
+4. Nothing is ever assumed or auto-populated.
+5. The completed ticket is shown back for review **before** anything is created.
+6. The incident is created only once every required field is present and validated.
+
+**Guards:**
+
+* Validation runs **again on confirm**, rather than trusting what the client sends
+  back, for the same reason `/fallout/approve` re-derives its reassignment target
+  server side. A stale or tampered client cannot skip a check.
+* `state` is stripped from the create payload no matter what a caller passes, so this
+  client still never transitions a ticket.
+* `assignment_group` is read back after the write, because ServiceNow silently
+  **drops** a group name it cannot resolve. Without the read-back a typo produces an
+  unassigned ticket that looks like a success.
+* Creation defaults to `SERVICENOW_DEMO_GROUP`, so a bug cannot spray tickets into a
+  live queue.
+
+**Required fields** live in one place, `REQUIRED_TICKET_FIELDS` in
+`fallout_engine.py`.
+
+`discover_required_fields.py` was run against `dev449716` and found that **ServiceNow
+itself requires nothing at create time**: no dictionary-mandatory fields on `incident`
+or on `task`. The only enforced rule is a data policy, "Make close info mandatory when
+resolved or closed", which applies to REST and requires `close_code` and `close_notes`,
+but only when a ticket is being closed. `seed_demo_tickets.py` already sends both when
+it closes the seeded tickets.
+
+So the seven fields the chat collects are a **business choice, not a ServiceNow
+constraint**, and the list can be trimmed freely. Re-run the script against any new
+instance before assuming this still holds. It reads both `sys_dictionary` (`mandatory=true`) and `sys_data_policy2`,
+because **data policies are enforced on REST inserts** while UI policies are not, so
+checking only the dictionary misses genuinely required fields.
+
+**Field extraction** prefers values the customer labelled themselves
+("Account: 4471829"), parsed deterministically, and only calls the model for
+free-form text. A labelled value is authoritative and the model never overwrites it.
+The extraction prompt is forbidden from inferring, deriving, or completing any value:
+an absent field comes back null and the flow asks again.
+
+## Knowledge base
+
+The demo KB is the **18 resolved support tickets** in
+`data/demo_support_tickets.json`, supplied by the product owner and stored verbatim.
+Six error codes (`MODEM-001` to `003`, `VOICE-001` to `003`), three tickets each, four
+task types.
+
+`KB_SOURCE` selects where the KB is read from:
+
+* `spreadsheet` (default) reads the file pinned by `KB_EXCEL_PATH`. Works with no
+  ServiceNow instance at all.
+* `servicenow` reads closed incidents in `SERVICENOW_DEMO_GROUP`, so what is visible
+  in the ServiceNow UI is literally what gets searched.
+
+When `servicenow` is selected but the instance cannot be read, it **falls back to the
+spreadsheet** rather than serving an empty KB. That is deliberate: an unreachable
+instance should cost freshness, not the assistant's ability to answer.
+
+Two things about seeding this instance are not obvious and cost real time:
+
+* **The close code must be a value from the instance's own choice list.** A data
+  policy makes `close_code` mandatory when closing, and ServiceNow rejects an invalid
+  value with `403 Data Policy Exception: The following fields are mandatory:
+  Resolution code`, which reads as though the field were omitted rather than wrong.
+  This instance has no "Solved (Permanently)"; it uses "Solution provided" and nine
+  others. Check `sys_choice` for `name=incident^element=close_code` before assuming.
+* **A journal write to a CLOSED incident is silently dropped.** The PATCH returns 200
+  and `sys_journal_field` gains no row. So the labelled block must be posted BEFORE
+  closing, and repairing a closed ticket means reopening it, posting, then closing
+  again. The seeder does exactly that, and verifies the block landed rather than
+  trusting the 200.
+
+`make_demo_kb.py` converts the JSON into a spreadsheet whose headers match the
+mapping already pinned in `data/kb_column_map.json`, so switching KB files needs no
+mapping change. `seed_demo_tickets.py` seeds the same tickets into ServiceNow, writing
+a **labelled block** into the `comments` journal because that is where this app reads
+structured fields from. All 18 have been verified to round-trip back through
+`parse_ticket()` with the correct subcategory, resolution code, description and
+resolution notes.
+
+### Embedding policy
+
+Problem-side only: `short_description + description + subcategory + service_type`.
+The **resolution is never embedded**, since it is the answer and embedding it would
+break query/document symmetry. Everything else rides in Chroma metadata and is used
+after retrieval.
+
+### Relevance thresholds, measured not guessed
+
+| Band | Range | Behaviour |
+| --- | --- | --- |
+| Rejected | < 0.40 | No usable match. The model is not called at all |
+| Weak | 0.40 to 0.55 | Shown with a caution |
+| Partial | 0.55 to 0.60 | Shown |
+| Strong | >= 0.60 | `SIM_STRONG`, shared with the internal pipeline |
+
+Measured against the 18-ticket KB with 22 realistic customer phrasings:
+
+* On topic: **0.524 to 0.817**, mean 0.679. **21 of 22 retrieved the exactly correct
+  error code first**; the miss ("my modem keeps restarting over and over") is
+  genuinely ambiguous between MODEM-001 and MODEM-002 and still had the right code in
+  its top three.
+* Zero domain bleed: no modem question returned a voice ticket, and none the reverse.
+* Off topic: 0.007 to 0.093. Closest near-miss, "can I cancel my service", 0.349.
+
+That first calibration produced a floor of 0.45, **and it was wrong**. The way it was
+wrong is worth recording, because it is easy to repeat: every phrasing in that set was
+fairly specific, while real customers type something short and generic, which scores
+much lower against long specific documents. "my internet is not working" scores 0.467,
+"i have no internet" 0.372 and "my line is dead" 0.361, so a 0.45 floor refused real
+customers while the calibration set looked perfectly healthy.
+
+A second pass measured 15 short generic customer phrasings against 10 off-topic ones
+(billing, cancellation, opening hours, nonsense):
+
+* At **0.36**, all 15 on-topic queries are accepted and all 10 off-topic ones refused.
+* At 0.45, only 11 of 15 on-topic queries are accepted.
+* The nearest false positive is "can I cancel my service" at 0.349, so the margin is
+  real but thin, roughly 0.012. Above 0.38, genuine problems start being refused.
+
+A third pass, against the live **ServiceNow-backed** KB rather than the spreadsheet,
+moved the numbers again, because the text parsed out of the journal differs slightly
+from the spreadsheet rows. The decisive case: **"I want to cancel my service" scores
+0.361 there**, so a 0.36 floor answered a cancellation request with modem
+troubleshooting steps. Across 15 on-topic and 14 off-topic phrasings, every floor from
+0.38 to 0.46 gives zero false accepts.
+
+The floor is therefore **0.40**, sitting 0.04 above the highest off-topic score and
+0.06 below the lowest on-topic score it accepts. The cost is that two very terse
+phrasings, "my line is dead" (0.354) and "i have no internet" (0.374), fall below it
+and get the honest "I could not find anything" plus a ticket offer. That is a safe
+answer; troubleshooting a cancellation request is not.
+
+**Recalibrate whenever the KB source or contents change.** It has moved three times.
+
+## The internal pipeline (`fallout_engine.recommend`)
+
+Reached by typing an incident number. Unchanged:
+
+0. **REDIRECT pre-route**, deterministic, before anything else. `routing_store`
+   matches `data/routing_rules.json`; a Buy Flow hit short-circuits the pipeline into
+   "reassign to the owning team", with no LLM involved. "Every Buy Flow ticket goes to
+   the Buy Flow team" is a business rule, so it must not depend on retrieval quality.
+1. **RETRIEVE** top-K similar closed tickets via hybrid search.
+2. **ROUTE** an LLM router picks which validation tool to run and which identifiers to
+   pull.
+3. **VALIDATE** the chosen tool runs deterministically and returns a verdict
+   (`confirmed` / `ambiguous` / `not_confirmed`, or `not_applicable` when no tool fits
+   but grounding is strong).
+4. **GENERATE** a Resolution (history only) and a Remediation (validation driven).
+5. **DECIDE** `recommend` vs `needs_review`, with a confidence level.
 
 ### Two remediation families (two id schemes)
-
-The app now handles fallout keyed on **two different identifier schemes**, and the
-validation tools are split accordingly — do not merge them:
 
 | Family | Ids | Store | Tools |
 | --- | --- | --- | --- |
 | Duplicate service / porting | `LOC-`, `SVC-` | `provisioning_store` | `provisioning.check_active_service` |
 | BOSS OM (order + account) | BAN, order id, `OMTASK` | `oms_store` | `oms.check_account_status`, `oms.check_order_status`, `oms.check_network_type` |
 
-The `oms.*` checks answer **"which value is wrong?"** — each compares two values
-that are supposed to agree (account status vs its orders' status; banner vs
-provisioned network type; order stage vs whether it reflects on the account) and
-returns `data.field` / `data.current` / `data.expected` so the recommendation can
-name the exact correction rather than describing it vaguely.
-
-`servicenow_client.parse_ticket()` and `kb_source` both extract `ban` / `order_ref`
-/ `task_ref`, so live tickets and spreadsheet KB tickets have the same shape and the
-router can pass identifiers from either.
-
 ### Redirect / reassignment (Buy Flow)
 
-Some fallout is not this queue's to fix. `data/routing_rules.json` holds regex rules
-mapping a ticket to an owning `assignment_group`; `routing_store.classify()` is
-deterministic and runs *before* retrieval and LLM routing.
-
-**Approving a redirect actually MOVES the ticket.** `/fallout/approve` reassigns
-first, then posts the comment — so a failed move never leaves behind a comment
-claiming success. `rec["action"]` is `"redirect"` vs `"comment"`, and
-`format_comment()` branches on it.
-
-Two guards on that write, both deliberate:
-
-* The destination is **re-derived server-side** from the routing rules on approve.
-  The request's `reassign_to` is only compared against it, so a client cannot move
-  a ticket to a team the rules do not sanction, and a stale recommendation is
-  rejected rather than applied.
-* ServiceNow silently **drops** an `assignment_group` it cannot resolve to a real
-  group, so `reassign()` reads the field back and reports a mismatch as a failure.
-  Without this, a typo in `routing_rules.json` would look like a successful
-  reassignment while the ticket sat untouched.
-
-To add a team: append a rule with `match_any` regexes and the exact ServiceNow
-assignment-group name. No code change needed. Verify via `GET /fallout/routing-rules`.
-A rule with an empty `assignment_group` downgrades to recommend-and-comment.
-
-### Knowledge-base source (spreadsheet, not ServiceNow)
-
-The historical KB comes from an incidents spreadsheet in `data/` (`.xlsx`/`.csv`),
-loaded by `kb_source.py`; ServiceNow supplies only the OPEN queue. Only rows whose
-state reads as closed are indexed (`CLOSED_STATES` / `CLOSED_PREFIXES`).
-
-Column headers are auto-mapped by alias — exact match first, then substring — and
-`data/kb_column_map.json` overrides the mapping per field when auto-detection is
-wrong. **Verify the mapping before trusting the KB**: run `python kb_source.py`
-from `backend/`, or `GET /fallout/kb-source`. Set `KB_EXCEL_PATH` to pin a specific
-file, otherwise the newest spreadsheet in `data/` wins.
-
-Gotcha the mapper already guards: incident exports often carry a geographic
-**State** column alongside the ticket **Status**. Matching on the header alone
-picks the wrong one and silently produces a KB with zero closed tickets, so
-`_pick_state_column()` also checks the column's *values* against a lifecycle
-vocabulary. Duplicate ticket numbers are suffixed (`_dedupe`) since Chroma ids must
-be unique, and upserts are batched at 500.
-
-#### What the BOSS OM export needs (and why)
-
-The current export's headers are `number, assigned_to, state,
-comments_and_work_notes, category, assignment_group, u_issue_type,
-short_description, description, close_notes`. Three things about it are not
-obvious and are pinned in `data/kb_column_map.json`:
-
-* **`subcategory` maps to `u_issue_type`, never `category`.** Subcategory is one of
-  the four EMBEDDED fields. `u_issue_type` is the discriminative fallout type
-  (`Staging Stuck`, `Account Status Mismatch`, `Network Type Mismatch`);
-  `category` is a two-value application bucket that adds no retrieval signal.
-  `category` is kept as separate non-embedded metadata.
-* **There is no resolution-code column.** The `{RCA TAG : Order Completion -
-  Staging Stuck}` marker agents write into `close_notes` *is* the resolution code,
-  and `_RCA_TAG` extracts it. Brace/paren/`RCATag`/unclosed variants all parse.
-* **Identifiers are inline, not columnar.** This data keys on **BAN**, order ids
-  (`WI2100002247` — two letters + 8–12 digits) and `OMTASK…`, not the `LOC-`/`SVC-`
-  scheme the original demo data used. `_row_to_ticket` recovers them by regex,
-  reading `close_notes` before the customer's own description so the agent's
-  corrected id wins.
-
-`comments_and_work_notes` is ~90% journal boilerplate (auto-close notices,
-`Assignment Rule … has been applied`, `Record Producer: … was used`).
-`_scrub_notes()` strips exactly those lines and keeps genuine agent commentary.
+Approving a redirect genuinely **moves** the ticket. `/fallout/approve` reassigns
+first, then posts the comment, so a failed move never leaves a comment claiming
+success. The destination is **re-derived server side** from the routing rules on
+approve, so a client cannot move a ticket to a team the rules do not sanction.
 
 ### ServiceNow data quirk (important)
 
-Native incident fields are NOT populated. Every structured field (State, Location
-ID, order refs, Service Type, Resolution Code, Description, Work/Resolution Notes)
-lives as a labelled text block inside the `comments` journal field.
-`servicenow_client._canonical_block()` picks the newest journal entry containing
-both `Location ID:` and `Description:`; `_parse_block()` is generic
-(`Label: value` → fields, bare `Label:` → sections), so new fallout types need no
-parser change. Fallout tickets are found by `short_descriptionLIKEfallout`.
-
-### Embedding policy
-
-Problem-side ONLY: `short_description + description + subcategory + service_type`.
-The **resolution is never embedded** (it's the answer — embedding it would break
-query/document symmetry). Everything else rides in Chroma metadata and is used
-after retrieval.
+On the BOSS OM instance, native incident fields are NOT populated. Every structured
+field lives as a labelled text block inside the `comments` journal field.
+`_canonical_block()` picks the newest journal entry containing both `Location ID:` and
+`Description:`; `_parse_block()` is generic (`Label: value` becomes a field, bare
+`Label:` starts a section), so new fallout types need no parser change. Comments this
+app posted itself are excluded, otherwise approving a ticket poisons its own source.
 
 ## Running
 
-Backend (from `backend/`, needs the env vars below):
+Backend (from `backend/`):
 
 ```bash
 uvicorn main:app --port 8000
@@ -200,94 +340,134 @@ npm install
 npm run dev
 ```
 
-CORS in `main.py` allows ports 5050 / 5173 / 5174. The frontend calls the backend
-at `http://localhost:8000` (`frontend/src/api.js`).
+CORS in `main.py` allows ports 5050 / 5173 / 5174. The frontend calls the backend at
+`http://localhost:8000` (`frontend/src/api.js`).
 
-Optional MCP server (exposes the validation checks as MCP tools):
+Setting up a fresh instance, in order:
 
 ```bash
-python mcp_server.py            # Streamable HTTP at http://127.0.0.1:8765/mcp
-python mcp_server.py --stdio    # stdio transport
+cd backend
+../rca/bin/python discover_required_fields.py     # read-only; update REQUIRED_TICKET_FIELDS
+../rca/bin/python seed_demo_tickets.py --dry-run  # inspect what would be written
+../rca/bin/python seed_demo_tickets.py            # create the group and the 18 tickets
 ```
+
+Then set `KB_SOURCE=servicenow` to read the KB live from the instance.
 
 ## Configuration (`backend/.env`)
 
-Create `backend/.env` (do NOT commit it — it is gitignored). Keys used:
-
 | Key | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude — every LLM call (router, resolution, remediation, breakdown) |
-| `ANTHROPIC_MODEL` | chat model (default `claude-sonnet-4-5`) |
+| `ANTHROPIC_API_KEY` | Claude. Every LLM call. Needs **credit on the Console org**, not just a valid key |
+| `ANTHROPIC_MODEL` | chat model |
 | `SERVICENOW_INSTANCE` | instance base URL |
-| `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account (used by both auth modes) |
-| `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client — **preferred**; unset both to fall back to Basic auth |
-| `SERVICENOW_QUEUE_GROUP` | assignment group whose incidents form the queue (default `BOSS OM IT Support`) |
-| `SERVICENOW_QUERY` | optional — override the whole incident query |
-| `KB_EXCEL_PATH` | optional — pin the KB spreadsheet (default: newest in `data/`) |
-| `KB_EXCEL_SHEET` | optional — sheet name (default: first sheet) |
+| `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
+| `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client, **preferred**; unset both to fall back to Basic |
+| `SERVICENOW_QUEUE_GROUP` | assignment group forming the internal queue |
+| `SERVICENOW_DEMO_GROUP` | group for the demo tickets and for tickets the chat creates |
+| `KB_SOURCE` | `spreadsheet` or `servicenow` |
+| `KB_EXCEL_PATH` | the KB spreadsheet when `KB_SOURCE=spreadsheet` |
+| `KB_EXCEL_SHEET` | optional sheet name |
 
 ### ServiceNow auth: use OAuth
 
-ServiceNow now ships **Basic Auth API Restriction**
+ServiceNow ships **Basic Auth API Restriction**
 (`glide.authenticate.basic_auth.restriction.*`). When active, Basic auth is blocked
-for REST while UI login keeps working — so an instance looks perfectly healthy in a
-browser while every API call returns `401 User is not authenticated`. Diagnose it by
-reading those properties; the allow-list lives in `sys_user_basic_auth_exception`,
-which needs an *elevated* `security_admin` session to write (holding the role is not
-enough).
+for REST while UI login keeps working, so an instance looks perfectly healthy in a
+browser while every API call returns 401. `servicenow_client` therefore prefers OAuth
+and falls back to Basic only when no client is configured. It uses the **password
+grant** deliberately, so the token is bound to a real user and writes are attributed
+to that account in the audit trail. Tokens are cached until a minute before expiry,
+and a 401 triggers exactly one refresh-and-retry.
 
-`servicenow_client` therefore prefers OAuth and falls back to Basic only when no
-client is configured. It uses the **password grant** rather than client_credentials
-deliberately: the token is bound to a real user, so comments and reassignments are
-attributed to that account in the ticket's audit trail. Tokens are cached until a
-minute before expiry, and a 401 triggers exactly one refresh-and-retry.
+**Diagnosing a 401:** `invalid_client` means the client id or secret is wrong.
+`access_denied` means the **user credentials** are being rejected, which on a personal
+developer instance usually means the admin password was reset when the instance was
+reclaimed. Note that ServiceNow locks an account after six failed attempts, so do not
+loop a script against it while testing.
 
-To create the client: **System OAuth → Application Registry → New → Create an OAuth
-API endpoint for external clients**. The `client_secret` field reads back encrypted
-via the API, so set it to a known value rather than trying to read the generated one.
+### Embeddings need no key
 
-### Which incidents form the queue
+Anthropic has no embeddings endpoint, so the vector side runs locally:
+`all-MiniLM-L6-v2` through `onnxruntime` via Chroma's `DefaultEmbeddingFunction`. The
+model caches under `~/.cache/chroma` on first use and works offline after that. So
+**retrieval, BM25, and the whole redirect path work with no API key at all**; only the
+written prose needs Claude.
 
-`FALLOUT_QUERY` matches on **assignment group**, not on the word "fallout" in the
-summary — real tickets read like "Remove TN (973) 396-2160 on BAN 1000302044" and
-never say "fallout". Note that an approved Buy Flow redirect therefore makes the
-ticket **drop out of the queue**, which is correct: it is no longer this team's.
-`get_ticket()` looks up by number and is unaffected.
+Local embeddings are **384-dimensional** where OpenAI's were 1536. Chroma pins
+dimension at collection-creation time, so switching embedders requires deleting
+`data/chroma_db/` and rebuilding. A mismatched collection fails to query rather than
+silently degrading.
 
-Seed a queue into an instance with `python seed_open_queue.py` (from `backend/`;
-`--dry-run` supported). It creates the queue group and every group the routing rules
-redirect to, since ServiceNow silently drops an `assignment_group` it cannot resolve.
+## Testing
 
-**Embeddings need no key.** Anthropic has no embeddings endpoint, so the vector side
-runs locally — `all-MiniLM-L6-v2` through `onnxruntime`, via Chroma's
-`DefaultEmbeddingFunction` (`fallout_store._get_embedding_function`). The model is
-cached under `~/.cache/chroma` on first use and works offline afterwards. This means
-**retrieval, BM25, and the whole redirect path work with no API key at all** — only
-the LLM-written prose needs Claude.
+Dry tests are run against stubs, so nothing is written to any external system.
 
-Consequence worth remembering: local embeddings are **384-dimensional**, OpenAI's
-were 1536. Chroma pins dimension at collection-creation time, so switching embedders
-requires deleting `data/chroma_db/` and rebuilding — a mismatched collection fails to
-query rather than silently degrading.
+**Ticket creation flow, 28 assertions, all passing:**
 
-`OPENAI_API_KEY` is now optional and unused by the pipeline; only the vestigial
-`/transcribe` endpoint touches it, and nothing in the UI calls that. `JIRA_*` and
-`NGROK_AUTHTOKEN` are vestigial from the old app and unused.
+* `open_ticket` lists all 7 required fields and creates nothing.
+* Partial details produce `ticket_missing` naming **exactly** the outstanding fields,
+  and no email, phone, or affected service is invented.
+* Confirming while incomplete is **blocked** and creates nothing.
+* The review stage shows all fields and still creates nothing.
+* Confirm creates **exactly one** incident, with `short_description` set to the
+  customer's summary and the other fields carried in the labelled description.
+* Cancel creates nothing.
+* Off-topic input is refused and never turned into advice.
 
-## Conventions & gotchas
+**Seeding round trip:** all 18 tickets were fed through `parse_ticket()` as the app
+would read them back from ServiceNow, and every one recovered the correct
+short_description, subcategory, resolution code, description and resolution notes.
 
-- **Writes are limited to exactly two operations: `post_comment` and `reassign`.**
-  Never close, resolve, or transition a ticket — `reassign` sets `assignment_group`
-  and deliberately omits `state` from its payload. Do not widen this surface
-  without asking the product owner; adding a third write is a product decision,
-  not an implementation detail.
-- **Approve posts stored text**, it does not re-run the LLM — keep it that way so
-  what's written is exactly what the human approved.
+**KB fallback:** with `KB_SOURCE=servicenow` and the instance unreachable, the KB
+falls back to the spreadsheet and returns all 18 tickets rather than going empty.
+
+**Similarity:** 22 phrasings, numbers recorded in the thresholds section above.
+
+## Known blockers
+
+* **Anthropic key: resolved.** Worth recording how, because the symptom was
+  misleading. A working key was pasted into `.env` with a **space inserted in the
+  middle** (107 characters instead of 106), which produced `API key is invalid`.
+  Before that, a genuinely unfunded key produced `Your credit balance is too low`.
+  Those two errors mean different things: the credit error means the key authenticated
+  fine and the organisation has no funds, so issuing a new key on that organisation
+  changes nothing. Check the key's length and for stray whitespace before assuming
+  anything else.
+* **Synthetic demo tickets are disabled.** `data/fake_tickets.json` defines
+  INC0010018 to INC0010027, which **collide** with the real seeded incidents
+  INC0010001 to INC0010019. `get_ticket()` checks the synthetic set first, so
+  INC0010018 resolved to a Buy Flow ticket instead of the real Voice Quality one. The
+  file is set to `enabled: false` rather than deleted. Do not re-enable it while the
+  seeded tickets exist.
+* **ServiceNow instance: resolved.** A replacement developer instance
+  (`dev449716`) is configured and reachable. The OAuth client from the previous
+  instance does not exist on it, so `SERVICENOW_CLIENT_ID` and
+  `SERVICENOW_CLIENT_SECRET` are cleared and the client falls back to Basic auth,
+  which works there. Register an OAuth client and set both values if Basic auth is
+  ever restricted on this instance.
+
+## Conventions and gotchas
+
+- **Writes are limited to exactly three operations: `post_comment`, `reassign`, and
+  `create_incident`.** Never close, resolve, or transition a ticket. `reassign` sets
+  `assignment_group` only, and `create_incident` strips `state`. Do not widen this
+  surface without asking the product owner; adding a write is a product decision, not
+  an implementation detail.
+- **Approve posts stored text**, it does not re-run the LLM, so what is written is
+  exactly what the human approved.
 - **Verdicts are deterministic.** Add new checks as `@tool` functions in
   `validation_tools.py`; the LLM only routes to them. Mirror new tools in
   `mcp_server.py` with a thin wrapper.
-- **All prompts live in `prompts.py`** — keep them there, not inline.
-- **Data files** (`data/*.json`, `data/chroma_db/`) are read fresh where noted so
-  they can be edited without a restart. `data/chroma_db/` is gitignored.
-- **Secrets: never commit `backend/.env`.** If a real key is ever committed, rotate
-  it — gitignore does not un-track an already-committed file.
+- **All prompts live in `prompts.py`**, not inline.
+- **Conversation intent comes from buttons**, not from model interpretation of free
+  text. Keep it that way: it is what makes the flow survive an LLM outage.
+- **Never show the customer an unrewritten internal resolution.** See the safety note
+  above.
+- **Data files** (`data/*.json`, `data/chroma_db/`) are read fresh where noted so they
+  can be edited without a restart. `data/chroma_db/` is gitignored.
+- **Do not add tickets or scenarios to the dataset without asking the owner.**
+- **Secrets: never commit `backend/.env`.** If a real key is committed, rotate it.
+  A gitignore entry does not un-track an already-committed file. Real customer data
+  (`data/closed tickets.xlsx`, `Comcast_RCA_Final_Dataset.csv`) is gitignored for the
+  same reason.

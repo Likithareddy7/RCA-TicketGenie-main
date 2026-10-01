@@ -9,7 +9,6 @@ uvicorn[standard]
 
 # AI / LLM stack
 anthropic                 # Claude — every LLM call in fallout_engine
-openai                    # optional; only the vestigial /transcribe endpoint
 
 # Vector store + hybrid search
 chromadb                  # persistent vector database
@@ -20,7 +19,7 @@ rank_bm25                 # BM25 keyword search (fused with semantic search)
 mcp                       # Model Context Protocol server/client SDK (FastMCP)
 
 # Data + utilities
-pandas                    # incidents spreadsheet (KB source) + watchlist CSV handling
+pandas                    # reads the knowledge-base spreadsheet (kb_source.py)
 openpyxl                  # .xlsx reader used by pandas.read_excel (kb_source.py)
 requests                  # ServiceNow REST API calls
 python-dotenv             # loads backend/.env

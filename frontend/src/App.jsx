@@ -65,6 +65,11 @@ export default function App() {
   const [toast, setToast] = useState(null)
 
   const bottomRef = useRef(null)
+  const triedStepsRef = useRef([])
+  const suggestedStepsRef = useRef([])
+  // Ticket fields captured so far. Held here because the backend is stateless, and
+  // sent back on every turn so a field already collected is never asked for twice.
+  const knownFieldsRef = useRef({})
   const started = messages.length > 0
 
   const showToast = (text, tone = 'ok') => {
@@ -76,17 +81,30 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
+  // The stage of the last assistant turn. When the assistant is waiting for ticket
+  // details, a typed message is those details rather than a new problem, so the
+  // intent is carried explicitly instead of being guessed at server side.
+  const lastStage = [...messages].reverse().find((m) => m.role === 'assistant')?.turn?.stage
+  const awaitingDetails = lastStage === 'ticket_collect' || lastStage === 'ticket_missing'
+  // After troubleshooting steps there are no buttons, so a typed reply is an answer to
+  // "did that work?" rather than a new problem. The backend reads it and either closes
+  // the conversation or moves towards raising a ticket.
+  const awaitingOutcome = lastStage === 'troubleshoot'
+
   // One round trip. `userText` is what to show as the customer's bubble (a typed
   // message, or the label of the button they pressed); `action` is the quick reply.
   const turn = async (userText, action = '') => {
     if (busy) return
+    if (!action && awaitingDetails) action = 'ticket_details'
+    else if (!action && awaitingOutcome) action = 'follow_up'
     const history = [...messages, { role: 'user', content: userText }]
     setMessages(history)
     setDraft('')
     setBusy(true)
     try {
       const payload = history.map((m) => ({ role: m.role, content: m.content }))
-      const res = await sendChat(payload, action)
+      const res = await sendChat(payload, action, triedStepsRef.current,
+                                 suggestedStepsRef.current, knownFieldsRef.current)
 
       if (res.stage === 'ticket_lookup') {
         setTicketRec(res)
@@ -100,6 +118,22 @@ export default function App() {
       }
 
       setTicketRec(null)
+      // Accumulate whatever the ticket flow has captured, so it survives later turns.
+      if (res.ticket_fields?.length) {
+        const captured = { ...knownFieldsRef.current }
+        res.ticket_fields.forEach((f) => {
+          if (f.value) captured[f.key] = f.value
+        })
+        knownFieldsRef.current = captured
+      }
+      // Remember the steps from the last recommendation, so they are still available
+      // several turns later when the ticket is actually confirmed.
+      if (res.stage === 'troubleshoot') {
+        // Only the customer-facing steps count as attempted. The provider steps were
+        // shown as what we would do, and have not been done.
+        triedStepsRef.current = (res.steps || []).map((s) => s.text).filter(Boolean)
+        suggestedStepsRef.current = (res.provider_steps || []).map((s) => s.text).filter(Boolean)
+      }
       setMessages([...history, { role: 'assistant', content: res.reply, turn: res }])
     } catch {
       setMessages([...history, {
@@ -115,6 +149,9 @@ export default function App() {
   const onQuickReply = (qr) => turn(qr.label, qr.action)
 
   const reset = () => {
+    triedStepsRef.current = []
+    suggestedStepsRef.current = []
+    knownFieldsRef.current = {}
     setMessages([])
     setTicketRec(null)
     setDraft('')
@@ -236,7 +273,13 @@ export default function App() {
                 onChange={setDraft}
                 onSend={(t) => turn(t)}
                 disabled={busy}
-                placeholder="Reply, or describe another problem"
+                placeholder={
+                  awaitingDetails
+                    ? 'Send your details in one message'
+                    : awaitingOutcome
+                      ? 'Let me know if that worked'
+                      : 'Reply, or describe another problem'
+                }
               />
             </div>
           </div>

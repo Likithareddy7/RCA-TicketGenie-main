@@ -95,7 +95,7 @@ def tickets():
         print(f"[FALLOUT] ServiceNow open-queue fetch failed: {e}")
         open_q = []
 
-    kb = kb_source.fetch_closed_kb()
+    kb = fallout_store.fetch_kb()   # honours KB_SOURCE (spreadsheet or servicenow)
     try:
         fallout_store.sync_kb(kb)   # incremental: only changed tickets re-embed
     except Exception as e:
@@ -215,73 +215,6 @@ def approve(req: ApproveRequest):
             "reassigned": reassigned}
 
 
-# ── free-text search ("Ticket Genie") ────────────────────────────────────
-
-MAX_QUERY_CHARS = 500
-
-
-class SearchRequest(BaseModel):
-    query: str
-    k: Optional[int] = 5
-
-
-@router.post("/search")
-def search(req: SearchRequest):
-    """Search the closed-ticket knowledge base with a plain-language problem
-    description, and return the closest resolved tickets with their resolutions.
-
-    ONE input, two behaviours, because the UI has a single search box:
-      * a bare incident number ("INC0010018") is a request for the FULL pipeline
-        on that ticket, validation, redirect routing, and an approvable comment.
-        It is answered by /recommend's engine call, so nothing about the queue
-        workflow changes just because the queue sidebar is gone.
-      * anything else is a history search: retrieve, then consolidate what was
-        actually recorded. Read-only, and no validation tool runs (they key on a
-        BAN / Location ID / order id, which a typed sentence does not have).
-
-    The KB is re-synced here because this endpoint replaced /fallout/tickets as
-    the first call the UI makes, and that was the only caller of sync_kb(), so
-    without this an edit to the incidents spreadsheet would stop being picked up.
-    It is incremental (content-hashed), so unchanged rows are not re-embedded.
-    """
-    query = (req.query or "").strip()
-    if not query:
-        return {"error": "Enter a problem description to search."}
-    if len(query) > MAX_QUERY_CHARS:
-        query = query[:MAX_QUERY_CHARS]
-
-    number = fallout_engine.looks_like_ticket_number(query)
-    if number:
-        rec = fallout_engine.recommend(number)
-        rec["mode"] = "ticket"
-        rec["query"] = query
-        return rec
-
-    try:
-        fallout_store.sync_kb()
-    except Exception as e:
-        print(f"[FALLOUT] KB sync on search failed: {e}")
-    return fallout_engine.search_resolutions(query, k=req.k or 5)
-
-
-@router.get("/examples")
-def examples():
-    """Seed queries for the search screen's empty state.
-
-    Deliberately drawn from the fallout types the KB actually contains: the KB is
-    order-fallout only, so a plausible-sounding prompt like "how to fix modem"
-    returns nothing and makes a working search look broken. These are measured to
-    return strong matches against the shipped KB.
-    """
-    return {"examples": [
-        "order not showing on the account after a speed upgrade",
-        "account still pending after the order completed",
-        "open task past due date blocking the order",
-        "cancelled order but the account is still active",
-        "wrong banner showing on a copper account",
-    ]}
-
-
 # ── customer conversation ("Ticket Genie" chat) ───────────────────────────
 
 class ChatMessage(BaseModel):
@@ -291,6 +224,17 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = []
+    # The recommended steps the customer was shown before they asked for a ticket.
+    # Sent by the client because the transcript carries only the prose, not the step
+    # list, and a raised ticket should say what was already attempted.
+    tried_steps: Optional[list[str]] = None
+    # The provider-side steps that were shown but NOT carried out, kept apart so
+    # the ticket does not claim work was done that was only recommended.
+    suggested_steps: Optional[list[str]] = None
+    # Ticket fields already established on earlier turns. Carried by the client
+    # because the backend is stateless, so that a captured field is never lost
+    # when a later extraction happens to read the transcript differently.
+    known_fields: Optional[dict] = None
     # Which quick reply the customer pressed, if any. Intent is taken from the
     # button rather than inferred from free text, so the conversation's control
     # flow stays deterministic (see fallout_engine.chat_turn).
@@ -313,7 +257,8 @@ def chat(req: ChatRequest):
     if action and action not in fallout_engine.CHAT_ACTIONS:
         action = ""
     try:
-        return fallout_engine.chat_turn(msgs, action)
+        return fallout_engine.chat_turn(msgs, action, req.tried_steps,
+                                        req.suggested_steps, req.known_fields)
     except Exception as e:
         print(f"[FALLOUT] chat turn failed: {e}")
         return {"stage": "escalate", "reply": "Something went wrong on my side. Let me get "
