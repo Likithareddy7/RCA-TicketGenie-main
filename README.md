@@ -1,31 +1,37 @@
-# RCA-TicketGenie
+# TicketGenie
 
-**A ServiceNow order-fallout remediation assistant for telecom OSS/BSS.**
+**A customer-facing telecom support assistant, grounded in resolved ServiceNow tickets.**
 
-For every *open* fallout ticket, TicketGenie retrieves the most similar *closed*
-tickets, validates the current system state with a deterministic check, and
-generates a recommended **Resolution** and **Remediation**. A human agent reviews
-it and, on approval, the exact recommendation is posted **as a comment** on the
-ServiceNow ticket.
+A customer describes a problem in their own words. TicketGenie retrieves the closest
+*resolved* tickets, turns their recorded resolutions into steps the customer can
+follow, and asks whether that fixed it. If it did not, it collects the required
+details and raises a real incident in ServiceNow.
 
-> **Recommend-only + human-in-the-loop.** The app never closes, resolves, or
-> transitions a ticket — the only write it performs is posting a comment. On
-> approval it posts the *exact* text the agent saw/edited; the LLM is not re-run.
+> **Grounded, not generated.** Every step shown comes from an actual recorded
+> resolution. Each retrieved ticket is translated in its own isolated model call, so
+> resolutions cannot be mixed across tickets, and the tickets behind any answer can
+> be inspected on screen.
 
 ---
 
 ## Features
 
-- **Hybrid RAG over historical tickets** — ChromaDB semantic search + BM25 keyword
+- **Hybrid RAG over resolved tickets**: ChromaDB semantic search plus BM25 keyword
   search, fused with Reciprocal Rank Fusion, over the closed-ticket knowledge base.
-- **Deterministic validation** — an LLM *routes* to a system-state check, but the
-  check runs deterministically and produces the verdict (no hallucinated pass/fail).
-- **Two-part output** — a history-grounded *Resolution* (always) and a
-  validation-driven *Remediation* (when a tool applies).
-- **Live knowledge base** — the KB syncs incrementally with ServiceNow on every
-  queue load (only changed tickets re-embed); no restart needed.
-- **Human-in-the-loop UI** — review, edit, and approve before anything is posted.
-- **MCP server** — the same validation checks are exposed as Model Context
+- **Traceable generation**: one model call per retrieved ticket, each seeing only
+  that ticket's resolution, then a merge over the translated steps. Citations are
+  validated server side, so a reference to a ticket that was not retrieved is
+  stripped before it reaches the screen.
+- **Honest refusal**: below a measured relevance floor the model is not called at
+  all. Off-topic questions are refused rather than answered with a guess.
+- **Steps split by who acts**: what the customer can try, then what the provider
+  would do if that does not work.
+- **Ticket creation with validation**: collect, verify, review, confirm. Nothing is
+  created until every required field is present and the customer has approved the
+  completed ticket.
+- **Live knowledge base**: reads closed incidents straight from ServiceNow, and
+  falls back to a local spreadsheet automatically if the instance is unreachable.
+- **MCP server**: the internal validation checks are exposed as Model Context
   Protocol tools for any MCP client.
 
 ---
@@ -33,63 +39,75 @@ ServiceNow ticket.
 ## Architecture
 
 ```
-ServiceNow (incidents)
-   │  read incidents; parse the labelled block inside the `comments` journal field
-   ▼
-Backend — FastAPI (backend/)
-   ├─ servicenow_client.py   read + post_comment (never closes/resolves)
-   ├─ fallout_store.py       ChromaDB + BM25 hybrid search over CLOSED tickets (the KB)
-   ├─ fallout_engine.py      recommend(): retrieve → route tool → validate → generate → decide
-   ├─ validation_tools.py    @tool registry — deterministic system-state checks
-   ├─ provisioning_store.py  mock OMS inventory (data/provisioning_data.json)
+ServiceNow                               data/demo_support_tickets.json
+   │  closed incidents in the demo         │  the resolved tickets, source of truth
+   │  group are the knowledge base         ▼
+   ▼                                    make_demo_kb.py ──▶ .xlsx (fallback KB)
+Backend, FastAPI (backend/)
+   ├─ fallout_engine.py      chat_turn() for customers, recommend() for agents
+   ├─ fallout_store.py       ChromaDB + BM25 hybrid search, KB source selector
+   ├─ servicenow_client.py   read, create_incident, post_comment, reassign
+   ├─ kb_source.py           loads the KB from a spreadsheet
    ├─ prompts.py             all LLM system prompts + user-prompt builders
    ├─ fallout_api.py         /fallout/* endpoints
-   ├─ fake_tickets.py        synthetic demo tickets (data/fake_tickets.json)
+   ├─ validation_tools.py    deterministic system-state checks (internal path)
+   ├─ routing_store.py       Buy Flow redirect rules (internal path)
+   ├─ seed_demo_tickets.py   creates the demo group and seeds the tickets
    └─ mcp_server.py          exposes the checks as MCP tools
    ▼
-Frontend — React + Vite + Tailwind (frontend/)
-   ├─ App.jsx                state container (queue → recommend → approve)
-   └─ components/            QueueSidebar, RecommendationView, SimilarTicket, ui
+Frontend, React + Vite + Tailwind (frontend/)
+   ├─ App.jsx                greeting, then the conversation
+   └─ components/            ChatComposer, ChatTurn, RecommendationView, ui
 ```
 
-### The recommendation pipeline (`fallout_engine.recommend`)
+### The conversation pipeline (`fallout_engine.chat_turn`)
 
-1. **Retrieve** top-K similar *closed* tickets via hybrid search.
-2. **Route** — an LLM reads how those tickets were resolved + the available tools,
-   and picks which validation tool to run and which identifiers to pull.
-3. **Validate** — the chosen tool runs deterministically →
-   `confirmed` / `ambiguous` / `not_confirmed`, or `not_applicable` when no tool
-   fits but historical grounding is strong.
-4. **Generate** — a *Resolution* (history-only, from the top matches; always) and
-   a *Remediation* (validation-driven; only when a tool ran).
-5. **Decide** — `recommend` vs `needs_review`, with a confidence level.
-   (Retrieval confidence gate: `SIM_STRONG = 0.60`.)
+1. **Retrieve** the closest resolved tickets via hybrid search.
+2. **Gate** on relevance. Below `SEARCH_MIN_SIM = 0.40` nothing is usable, the model
+   is never called, and the customer is offered a ticket instead.
+3. **Translate** each retrieved ticket into steps in its **own** model call, seeing
+   only that ticket's resolution.
+4. **Merge** those translated steps into one ordered list, split into what the
+   customer can try and what the provider would do.
+5. **Read the reply**. "That worked" closes the conversation, "still not working"
+   offers a ticket, and "raise a ticket" goes straight into collection.
+6. **Create** the incident once every required field is validated and confirmed.
 
-> **ServiceNow note:** native incident fields are not populated on this instance —
-> every structured field lives as a labelled text block inside the `comments`
-> journal field, which `servicenow_client` parses generically. Fallout tickets are
-> matched by `short_descriptionLIKEfallout`.
+> **Internal path:** typing an incident number (`INC0010001`) into the same box
+> returns the full agent pipeline instead, with deterministic system-state
+> validation, Buy Flow redirect routing, and an approve bar that posts a comment or
+> reassigns. Customers never do this; it keeps the agent features reachable without
+> a second UI.
+
+> **Writes:** exactly three, all human-gated. `create_incident` after the customer
+> confirms, `post_comment` and `reassign` on agent approval. The app never closes,
+> resolves, or transitions a ticket.
 
 ---
 
 ## Tech stack
 
-| Layer     | Tech |
-| --------- | ---- |
-| Backend   | Python, FastAPI, Uvicorn |
-| AI/RAG    | OpenAI (`gpt-4o` + `text-embedding-3-small`), ChromaDB, `rank_bm25` |
-| Frontend  | React 18, Vite, Tailwind CSS, Axios |
-| Protocol  | Model Context Protocol (FastMCP) |
-| Source    | ServiceNow Table API |
+| Layer | Tech |
+| --- | --- |
+| Backend | Python 3.11+, FastAPI, Uvicorn |
+| Language model | Anthropic Claude (`claude-sonnet-4-5` by default) |
+| Embeddings | `all-MiniLM-L6-v2` run **locally** via onnxruntime, no API key needed |
+| Retrieval | ChromaDB, `rank_bm25`, fused with Reciprocal Rank Fusion |
+| Frontend | React 18, Vite, Tailwind CSS, Axios |
+| Protocol | Model Context Protocol (FastMCP) |
+| Source | ServiceNow Table API |
 
 ---
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11+ (developed against 3.13)
 - Node.js 18+
-- An OpenAI API key
-- ServiceNow instance + credentials (Table API access)
+- An Anthropic API key **with credit on the account**. A valid key with a zero
+  balance returns `Your credit balance is too low`, which is a billing state rather
+  than a key problem.
+- A ServiceNow instance you can write to. A free personal developer instance is
+  enough.
 
 ---
 
@@ -101,33 +119,58 @@ Frontend — React + Vite + Tailwind (frontend/)
 cd backend
 
 # create a virtualenv and install deps
-python -m venv .venv
-.venv/Scripts/activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
+python -m venv ../rca           # the repo expects the venv at ../rca
+source ../rca/bin/activate      # macOS/Linux
+# ..\rca\Scripts\activate       # Windows
 pip install -r requirements.txt
 
 # configure environment
-cp .env.example .env          # then edit .env with your real keys
+cp .env.example .env            # then edit .env with your real values
+```
 
-# run the API (http://localhost:8000)
+### 2. Check what your ServiceNow instance requires
+
+```bash
+python discover_required_fields.py      # read-only
+```
+
+Reports the mandatory incident fields from both `sys_dictionary` and the data
+policies. Data policies are enforced on REST inserts while UI policies are not, so
+checking only the dictionary misses genuinely required fields. Update
+`REQUIRED_TICKET_FIELDS` in `fallout_engine.py` if your instance demands more.
+
+### 3. Seed the knowledge base
+
+```bash
+python seed_demo_tickets.py --dry-run   # show what would be written
+python seed_demo_tickets.py             # create the group and the tickets
+```
+
+Creates the `TICKETGENIE DEMO` assignment group and the resolved support tickets
+inside it, each carrying a labelled block in its `comments` journal, which is where
+this app reads structured fields from. Safe to re-run.
+
+### 4. Run the API
+
+```bash
 uvicorn main:app --port 8000
 ```
 
-On startup the backend builds the knowledge base from ServiceNow. If ServiceNow is
-unreachable, it falls back to the existing local ChromaDB data.
+On startup the backend builds the knowledge base from whichever source `KB_SOURCE`
+selects. If the build fails, the existing local ChromaDB data is reused.
 
-### 2. Frontend
+### 5. Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev                   # Vite dev server on http://localhost:5050
+npm run dev                     # Vite dev server on http://localhost:5050
 ```
 
 CORS in `main.py` allows ports **5050 / 5173 / 5174**. The frontend calls the
 backend at `http://localhost:8000` (see `frontend/src/api.js`).
 
-### 3. (Optional) MCP server
+### 6. (Optional) MCP server
 
 ```bash
 cd backend
@@ -141,14 +184,28 @@ python mcp_server.py --stdio    # stdio transport (e.g. for a local desktop clie
 
 | Key | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | OpenAI chat + embeddings |
-| `OPENAI_MODEL` | chat model (default `gpt-4o`) |
-| `OPENAI_EMBED_MODEL` | embedding model (default `text-embedding-3-small`) |
+| `ANTHROPIC_API_KEY` | Claude. Needs credit on the account, not just a valid key |
+| `ANTHROPIC_MODEL` | chat model (default `claude-sonnet-4-5`) |
 | `SERVICENOW_INSTANCE` | instance base URL |
-| `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow Table API basic auth |
+| `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
+| `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client. Leave both empty to use Basic auth |
+| `SERVICENOW_DEMO_GROUP` | group for the demo tickets and anything the chat creates (default `TICKETGENIE DEMO`) |
+| `KB_SOURCE` | `servicenow` or `spreadsheet` |
+| `KB_EXCEL_PATH` | the spreadsheet used when `KB_SOURCE=spreadsheet` |
+| `SERVICENOW_QUEUE_GROUP` | the group forming the internal agent queue |
 
-See `backend/.env.example` for a template. **`.env` is gitignored — never commit
-real credentials.**
+See `backend/.env.example` for a template. **`.env` is gitignored, never commit real
+credentials.**
+
+> **KB fallback:** `KB_SOURCE=servicenow` falls back to the spreadsheet
+> automatically when the instance cannot be read, so an unreachable instance costs
+> freshness rather than the ability to answer.
+
+> **Diagnosing a ServiceNow 401:** `invalid_client` means the OAuth client id or
+> secret is wrong, whereas `access_denied` means the user credentials are being
+> rejected, which on a developer instance usually means the admin password was
+> reset. ServiceNow locks an account after six failed attempts, so do not loop a
+> script against it.
 
 ---
 
@@ -156,30 +213,74 @@ real credentials.**
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /fallout/tickets` | Open queue + closed KB (syncs the KB on load) |
-| `GET /fallout/recommend/{number}` | Generate a recommendation for an open ticket |
+| `POST /fallout/chat` | **The main endpoint.** One conversation turn |
+| `GET /fallout/recommend/{number}` | Full agent recommendation for one incident |
+| `POST /fallout/approve` | Post the approved comment, and reassign on a redirect |
 | `POST /fallout/breakdown` | AI breakdown of one historical ticket |
-| `POST /fallout/approve` | Post the approved comment to ServiceNow (never closes) |
+| `POST /fallout/rebuild-kb` | Rebuild the KB from the configured source |
+| `GET /fallout/kb-source` | Which spreadsheet backs the KB and how its columns mapped |
 | `GET /fallout/tools` | The registered validation tools (schema) |
-| `POST /fallout/rebuild-kb` | Full KB rebuild from ServiceNow |
 | `GET /health` | Health + KB size |
+
+`/fallout/chat` is stateless: the client sends the whole transcript each turn, along
+with the steps already shown and the fields already captured.
+
+---
+
+## Trying it out
+
+Questions that match the shipped knowledge base well:
+
+- `modem showing solid red light no internet connection`
+- `my internet keeps dropping every few hours and the modem randomly reboots`
+- `I have no dial tone after my service was installed and the line is dead`
+- `calls are cut off exactly at 30 minutes every time`
+
+Name **two symptoms**, the problem and its consequence, for the strongest match.
+Very short phrases such as "i have no internet" fall below the relevance floor and
+are honestly refused. To see the ticket flow, reply `still not working`, send your
+details in one message, check the review table, and confirm.
+
+| Band | Range | Behaviour |
+| --- | --- | --- |
+| Rejected | < 0.40 | No usable match, the model is not called |
+| Weak | 0.40 to 0.55 | Shown with a caution |
+| Partial | 0.55 to 0.60 | Shown |
+| Strong | >= 0.60 | Treated as reliable grounding |
+
+These thresholds were measured against this knowledge base. **Recalibrate after
+changing the KB's source or contents.**
 
 ---
 
 ## Extending
 
-- **New validation check** → add one `@tool` function in `validation_tools.py`
-  (deterministic; returns a verdict). Mirror it with a thin wrapper in
-  `mcp_server.py`. The LLM router discovers it automatically.
-- **New fallout type** → usually needs *no* parser change; the comment-block parser
-  is generic (`Label: value` → fields, bare `Label:` → sections).
-- **Prompts** live in `prompts.py` — keep them there, not inline.
+- **New demo tickets** → add them to `data/demo_support_tickets.json`, run
+  `python make_demo_kb.py`, then `python seed_demo_tickets.py`.
+- **Different required ticket fields** → edit `REQUIRED_TICKET_FIELDS` in
+  `fallout_engine.py`. It is the single place the flow reads its requirements from.
+- **New validation check** (internal path) → add one `@tool` function in
+  `validation_tools.py` and mirror it with a thin wrapper in `mcp_server.py`.
+- **New redirect team** (internal path) → append a rule to
+  `data/routing_rules.json`. No code change needed.
+- **Prompts** live in `prompts.py`. Keep them there, not inline.
 
 ---
 
 ## Security
 
-- Never commit `backend/.env`. If a key is ever committed, rotate it — a
+- Never commit `backend/.env`. If a key is ever committed, rotate it, since a
   `.gitignore` entry does not un-track an already-committed file.
-- The API has no authentication; run it on localhost only. `POST /fallout/approve`
-  is a write path into ServiceNow (comment-only) using the configured credentials.
+- Real customer data (`data/closed tickets.xlsx`, `Comcast_RCA_Final_Dataset.csv`)
+  is gitignored. The committed dataset is synthetic.
+- The API has no authentication; run it on localhost only. `POST /fallout/chat` and
+  `POST /fallout/approve` are write paths into ServiceNow using the configured
+  credentials.
+- The customer-facing path never shows internal system names or other customers'
+  identifiers. This is enforced in the prompts and is a safety rule, not a style
+  preference.
+
+---
+
+Design decisions, trade-offs, and the testing behind them are documented in
+[CLAUDE.md](CLAUDE.md).

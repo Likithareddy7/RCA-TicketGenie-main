@@ -659,7 +659,7 @@ def format_comment(rec: dict) -> str:
 # anything" plus a ticket offer. That is a safe answer; troubleshooting a cancellation
 # request is not.
 SEARCH_MIN_SIM = 0.40      # below this: no usable match, and the LLM is not called
-SEARCH_PARTIAL_SIM = 0.55  # 0.36-0.55 reads as 'weak', 0.55-0.60 as 'partial'
+SEARCH_PARTIAL_SIM = 0.55  # 0.40-0.55 reads as 'weak', 0.55-0.60 as 'partial'
 SEARCH_TOP_N = 3           # how many matches to return (retrieval still runs at k=5)
 
 # A query that is just an incident number is a request for the FULL pipeline on
