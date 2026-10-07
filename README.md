@@ -128,6 +128,35 @@ pip install -r requirements.txt
 cp .env.example .env            # then edit .env with your real values
 ```
 
+Neither the virtualenv (`rca/`) nor `.env` is in the repository, so a fresh clone
+has to create both. `data/chroma_db/` is gitignored too and rebuilds itself on first
+boot, which takes about a minute.
+
+**In VS Code:** open the repository folder, then run `Python: Select Interpreter`
+from the command palette and pick `./rca/bin/python`, so the editor resolves imports
+and the integrated terminal uses the right environment. You will want two terminals,
+one for the backend and one for the frontend.
+
+### Running it without a ServiceNow instance
+
+The two knowledge-base spreadsheets ship in the repository, so the app runs with no
+instance and no seeding. `.env.example` is already set up this way:
+
+```
+KB_SOURCE=spreadsheet
+KB_EXCEL_PATH=../data/support_kb.xlsx
+```
+
+Fill in `ANTHROPIC_API_KEY`, then skip to step 4. Retrieval and the whole redirect
+path need no API key at all, since embeddings run locally, but the customer path
+deliberately returns **zero steps** when the model is unavailable rather than quoting
+an internal resolution at a subscriber, so without a funded key you get a ticket
+offer instead of advice.
+
+Only one spreadsheet can be pinned, so this mode serves either the 52 Business Hub
+problems or the 18 modem/voice tickets, not both. Use `KB_SOURCE=servicenow` to
+search all 70 together.
+
 ### 2. Check what your ServiceNow instance requires
 
 ```bash
@@ -141,14 +170,31 @@ checking only the dictionary misses genuinely required fields. Update
 
 ### 3. Seed the knowledge base
 
+Two groups make up the knowledge base, and each has its own seeder. Both take
+`--dry-run`, and both are safe to re-run.
+
 ```bash
-python seed_demo_tickets.py --dry-run   # show what would be written
-python seed_demo_tickets.py             # create the group and the tickets
+python seed_demo_tickets.py --dry-run     # show what would be written
+python seed_demo_tickets.py               # TICKETGENIE DEMO, 18 modem/voice tickets
+
+python seed_support_tickets.py --dry-run
+python seed_support_tickets.py             # the support group, 52 Business Hub problems
 ```
 
-Creates the `TICKETGENIE DEMO` assignment group and the resolved support tickets
-inside it, each carrying a labelled block in its `comments` journal, which is where
-this app reads structured fields from. Safe to re-run.
+Each creates its assignment group and the resolved tickets inside it, every one
+carrying a labelled block in its `comments` journal, which is where this app reads
+structured fields from.
+
+Then switch the KB over to the instance:
+
+```
+KB_SOURCE=servicenow
+```
+
+A ticket raised in the chat is filed in whichever of the two groups holds the closed
+ticket that best matches it, and is classified with that ticket's issue type. The
+issue types are written to the incident's native `subcategory`, which only resolves
+if the instance has that choice: the seeders add the ones they need.
 
 ### 4. Run the API
 
@@ -189,7 +235,8 @@ python mcp_server.py --stdio    # stdio transport (e.g. for a local desktop clie
 | `SERVICENOW_INSTANCE` | instance base URL |
 | `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
 | `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client. Leave both empty to use Basic auth |
-| `SERVICENOW_DEMO_GROUP` | group for the demo tickets and anything the chat creates (default `TICKETGENIE DEMO`) |
+| `SERVICENOW_DEMO_GROUP` | group for the 18 modem/voice tickets, and the fallback when a new ticket's group cannot be derived (default `TICKETGENIE DEMO`) |
+| `SERVICENOW_SUPPORT_GROUP` | group for the 52 Business Hub support tickets. Both groups are read into the KB |
 | `KB_SOURCE` | `servicenow` or `spreadsheet` |
 | `KB_EXCEL_PATH` | the spreadsheet used when `KB_SOURCE=spreadsheet` |
 | `SERVICENOW_QUEUE_GROUP` | the group forming the internal agent queue |
