@@ -8,7 +8,8 @@ fastapi
 uvicorn[standard]
 
 # AI / LLM stack
-anthropic                 # Claude — every LLM call in fallout_engine
+google-genai              # Gemini, every LLM call in fallout_engine
+anthropic                 # Claude, kept for LLM_PROVIDER=anthropic as a fallback
 
 # Vector store + hybrid search
 chromadb                  # persistent vector database

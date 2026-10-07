@@ -457,8 +457,11 @@ Then set `KB_SOURCE=servicenow` to read the KB live from the instance.
 
 | Key | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude. Every LLM call. Needs **credit on the Console org**, not just a valid key |
-| `ANTHROPIC_MODEL` | chat model |
+| `LLM_PROVIDER` | `gemini` (the default) or `anthropic` (Claude) |
+| `GEMINI_API_KEY` | Gemini key from Google AI Studio. No Google Cloud project needed |
+| `GEMINI_MODEL` | Gemini model id. Verify it with `list_gemini_models.py` |
+| `ANTHROPIC_API_KEY` | Claude, used only when `LLM_PROVIDER=anthropic`. Needs **credit on the Console org**, not just a valid key |
+| `ANTHROPIC_MODEL` | Claude chat model |
 | `SERVICENOW_INSTANCE` | instance base URL |
 | `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
 | `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client, **preferred**; unset both to fall back to Basic |
@@ -485,6 +488,50 @@ and a 401 triggers exactly one refresh-and-retry.
 developer instance usually means the admin password was reset when the instance was
 reclaimed. Note that ServiceNow locks an account after six failed attempts, so do not
 loop a script against it while testing.
+
+### The LLM provider is one function
+
+Every LLM call in `fallout_engine.py` has the same shape, one system prompt and one
+user prompt returning text, so all eight call sites route through `_chat()`. The
+provider therefore lives entirely in that one block and nothing else in the engine
+knows which model is in use. Swapping provider means editing `_chat()`, `_get_client()`
+and `MODEL`, and nothing more.
+
+`LLM_PROVIDER` selects between **Gemini** (the default) and Claude. Gemini goes
+through the Gemini Developer API, which authenticates with a plain API key from
+Google AI Studio, so there is no Google Cloud project, no `gcloud` and no service
+account. Claude is kept reachable rather than deleted so a missing or rejected key
+cannot leave the app with no working model at all. Moving to Vertex AI later would
+be a change to `_get_client()` alone, swapping the key for
+`genai.Client(vertexai=True, project=..., location=...)`.
+
+Four things about the Gemini path are deliberate:
+
+* **The client is built lazily.** The old code constructed the Anthropic client at
+  import time, which would raise during import when the provider is unconfigured and
+  take the whole backend down,
+  including the retrieval and redirect paths that need no model at all.
+* **`resp.text` raises rather than returning empty** when a candidate is blocked by a
+  safety filter or finishes without content. That is a real difference from Anthropic,
+  so `_gemini_text()` normalises the outcome to either a non-empty string or a raised
+  error, and never to a silent empty string that would be parsed as a valid reply. It
+  recovers partial parts where a candidate has them.
+* **The system prompt moves into the config** as `system_instruction`, and
+  `max_tokens` becomes `max_output_tokens`. The app uses budgets from 60 to 1200.
+* **No tool-use translation was needed.** The `@tool` decorator in
+  `validation_tools.py` is local to this repo, not a provider API, and the schemas
+  reach the router as text inside a prompt via `build_router_user_prompt()`. Likewise
+  `_parse_json()` already slices between the first `{` and the last `}`, so a model
+  that wraps JSON in markdown fences is handled without change.
+
+Measured with the provider unconfigured: retrieval still runs, step generation fails
+per ticket, and the turn comes back as `escalate` with **zero steps** and a ticket or
+rep offer. That is the required safety behaviour, not a degraded guess.
+
+`list_gemini_models.py` lists the models a key can actually call and warns when
+`GEMINI_MODEL` is not among them. Model ids are retired on Google's own schedule, so
+the configured id is worth verifying rather than trusting: `gemini-2.5-flash` was
+already past its stated retirement date when this was written.
 
 ### Embeddings need no key
 

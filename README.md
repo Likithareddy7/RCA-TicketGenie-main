@@ -230,8 +230,11 @@ python mcp_server.py --stdio    # stdio transport (e.g. for a local desktop clie
 
 | Key | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude. Needs credit on the account, not just a valid key |
-| `ANTHROPIC_MODEL` | chat model (default `claude-sonnet-4-5`) |
+| `LLM_PROVIDER` | `gemini` (default) or `anthropic` for Claude |
+| `GEMINI_API_KEY` | Gemini key from [Google AI Studio](https://aistudio.google.com/apikey). No Google Cloud project needed |
+| `GEMINI_MODEL` | Gemini model id. Check it with `python list_gemini_models.py` |
+| `ANTHROPIC_API_KEY` | Claude, only when `LLM_PROVIDER=anthropic`. Needs credit on the account |
+| `ANTHROPIC_MODEL` | Claude chat model (default `claude-sonnet-4-5`) |
 | `SERVICENOW_INSTANCE` | instance base URL |
 | `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
 | `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client. Leave both empty to use Basic auth |

@@ -26,7 +26,6 @@ to ServiceNow here — approval posts a comment, and never closes the ticket.
 import os
 import re
 import json
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
 import fallout_store
@@ -38,23 +37,109 @@ import prompts
 
 load_dotenv()
 
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
-_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# ── LLM provider ────────────────────────────────────────────────────────
+# Every LLM call in this module has the same shape: one system prompt, one user
+# prompt, text back. They all route through _chat(), so the provider lives entirely
+# in this block and the eight call sites never need to know which one is in use.
+#
+# Gemini is the default, through the Gemini Developer API, which authenticates with
+# a plain API key from Google AI Studio. Anthropic is kept reachable with
+# LLM_PROVIDER=anthropic so a missing or rejected key cannot leave the app with no
+# working model at all.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+
+MODEL = (os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+         if LLM_PROVIDER == "anthropic"
+         else os.getenv("GEMINI_MODEL", "gemini-3-flash"))
+
+_client = None
+
+
+def _get_client():
+    """The provider client, built on first use.
+
+    Built lazily on purpose. The previous version constructed its client at import
+    time, which would take the whole backend down when the provider is unconfigured,
+    including the retrieval and redirect paths that need no model at all.
+    """
+    global _client
+    if _client is not None:
+        return _client
+    if LLM_PROVIDER == "anthropic":
+        from anthropic import Anthropic
+        _client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    else:
+        from google import genai
+        key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set. Get one from https://aistudio.google.com/apikey "
+                "and put it in backend/.env, or set LLM_PROVIDER=anthropic to use Claude.")
+        _client = genai.Client(api_key=key)
+        print(f"[LLM] Gemini, model={MODEL}")
+    return _client
+
+
+def _gemini_text(resp) -> str:
+    """The text out of a Gemini response, or an exception.
+
+    `resp.text` RAISES rather than returning empty when a candidate was blocked by a
+    safety filter or finished without content, which is a real difference from the
+    Anthropic path. Every caller already wraps _chat() in try/except and degrades
+    safely, so this normalises the outcome to either a non-empty string or a raised
+    error, and never to a silent empty string that would be parsed as a valid reply.
+    """
+    try:
+        text = resp.text
+    except Exception:
+        text = None
+    if text:
+        return text
+
+    # A partially returned candidate still carries usable parts.
+    parts = []
+    for cand in (getattr(resp, "candidates", None) or []):
+        content = getattr(cand, "content", None)
+        for part in (getattr(content, "parts", None) or []):
+            chunk = getattr(part, "text", None)
+            if chunk:
+                parts.append(chunk)
+    if parts:
+        return "".join(parts)
+
+    finish = getattr((getattr(resp, "candidates", None) or [None])[0], "finish_reason", None)
+    blocked = getattr(getattr(resp, "prompt_feedback", None), "block_reason", None)
+    raise RuntimeError(f"Gemini returned no text (finish_reason={finish}, "
+                       f"block_reason={blocked})")
 
 
 def _chat(system: str, user: str, max_tokens: int, temperature: float) -> str:
-    """One turn against Claude, returning the raw text reply.
+    """One turn against the configured model, returning the raw text reply."""
+    client = _get_client()
 
-    Every LLM call in this module has the same shape — one system prompt, one user
-    prompt, a JSON reply — so they all route through here. Note that Anthropic takes
-    `system` as a top-level argument rather than as a message in the list.
-    """
-    resp = _client.messages.create(
-        model=MODEL, max_tokens=max_tokens, temperature=temperature,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+    if LLM_PROVIDER == "anthropic":
+        # Anthropic takes `system` as a top-level argument, not as a message.
+        resp = client.messages.create(
+            model=MODEL, max_tokens=max_tokens, temperature=temperature,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return "".join(block.text for block in resp.content if block.type == "text")
+
+    # Gemini takes the system prompt in the config as `system_instruction`, and calls
+    # the output budget `max_output_tokens`.
+    from google.genai import types
+    resp = client.models.generate_content(
+        model=MODEL,
+        contents=user,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        ),
     )
-    return "".join(block.text for block in resp.content if block.type == "text")
+    return _gemini_text(resp)
+
 
 SIM_STRONG = 0.60   # retrieval confidence gate
 
