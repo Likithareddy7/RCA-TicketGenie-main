@@ -34,6 +34,7 @@ METADATA_FIELDS = [
     "location_id", "ban", "tn", "order_ref", "order_type", "task_ref",
     "service_type", "resolution_code", "referenced_service_id",
     "description", "work_notes", "resolution_notes",
+    "kb_group",
 ]
 
 _client = None
@@ -107,6 +108,7 @@ def _doc_hash(ticket: dict) -> str:
         str(ticket.get("resolution_notes", "") or ""),
         str(ticket.get("resolution_code", "") or ""),
         str(ticket.get("state", "") or ""),
+        str(ticket.get("kb_group", "") or ""),
     ])
     return hashlib.md5(basis.encode("utf-8")).hexdigest()
 
@@ -153,6 +155,15 @@ def get_collection():
 KB_SOURCE = os.getenv("KB_SOURCE", "spreadsheet").strip().lower()
 
 
+def _default_kb_group() -> str:
+    """Where a ticket with no group of its own belongs."""
+    try:
+        import servicenow_client
+        return servicenow_client.DEMO_GROUP
+    except Exception:
+        return ""
+
+
 def fetch_kb() -> list:
     """The closed tickets to index, from whichever source is configured."""
     if KB_SOURCE == "servicenow":
@@ -160,16 +171,21 @@ def fetch_kb() -> list:
         try:
             kb = servicenow_client.fetch_demo_closed_kb()
             if kb:
-                print(f"[FALLOUT-KB] source: ServiceNow group "
-                      f"{servicenow_client.DEMO_GROUP!r} ({len(kb)} closed)")
+                print(f"[FALLOUT-KB] source: ServiceNow "
+                      f"{servicenow_client.kb_groups()} ({len(kb)} closed total)")
                 return kb
-            print(f"[FALLOUT-KB] ServiceNow group "
-                  f"{servicenow_client.DEMO_GROUP!r} has no closed incidents; "
+            print(f"[FALLOUT-KB] ServiceNow groups "
+                  f"{servicenow_client.kb_groups()} hold no closed incidents; "
                   f"falling back to the spreadsheet.")
         except Exception as e:
             print(f"[FALLOUT-KB] ServiceNow KB unavailable ({type(e).__name__}); "
                   f"falling back to the spreadsheet.")
-    return kb_source.fetch_closed_kb()
+    # The spreadsheet carries no group of its own, so its rows are attributed to
+    # the demo group, which is also where unmatched tickets are filed.
+    rows = kb_source.fetch_closed_kb()
+    for t in rows:
+        t.setdefault("kb_group", _default_kb_group())
+    return rows
 
 
 def build_kb() -> int:

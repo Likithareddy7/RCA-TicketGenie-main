@@ -587,7 +587,8 @@ def create_incident(short_description: str, description: str,
     url = f"{INSTANCE}/api/now/table/incident"
     resp = _request("POST", url,
                     headers={"Content-Type": "application/json"},
-                    params={"sysparm_fields": "number,sys_id,assignment_group",
+                    params={"sysparm_fields": "number,sys_id,assignment_group,"
+                                              "category,subcategory",
                             "sysparm_display_value": "all"},
                     json=payload, timeout=30)
     resp.raise_for_status()
@@ -599,6 +600,8 @@ def create_incident(short_description: str, description: str,
 
     out = {"number": number, "sys_id": sys_id, "created": bool(number),
            "assignment_group": landed,
+           "category": _dv(result.get("category")),
+           "subcategory": _dv(result.get("subcategory")),
            "url": f"{INSTANCE}/nav_to.do?uri=incident.do%3Fsys_id%3D{sys_id}" if sys_id else ""}
     if group and landed.strip().lower() != group.strip().lower():
         # The ticket exists, so this is a warning rather than a failure. Say so
@@ -606,7 +609,62 @@ def create_incident(short_description: str, description: str,
         out["warning"] = (f"Incident {number} was created but ServiceNow did not accept "
                           f"assignment group '{group}' (it shows '{landed or 'nobody'}'). "
                           f"Check that the group exists.")
+    # Subcategory is read back for the same reason as the group: ServiceNow drops a
+    # value that is not in the choice list, and only resolves a choice under its own
+    # dependent category, so a silent drop is the expected failure rather than a 400.
+    want_sub = str((extra or {}).get("subcategory", "") or "").strip()
+    if want_sub and out["subcategory"].strip().lower() != want_sub.lower():
+        out.setdefault("warning", "")
+        out["warning"] += (f" Subcategory '{want_sub}' was not accepted "
+                           f"(it shows '{out['subcategory'] or 'nothing'}').")
     return out
+
+
+_subcategory_choices = None
+
+
+def subcategory_choices(refresh: bool = False) -> dict:
+    """{subcategory value: the category value it depends on}, read from the instance.
+
+    ServiceNow stores subcategory as a dependent choice: a value that is not in the
+    list is silently dropped on write, and a value only resolves under its own
+    dependent category. Both facts are read from sys_choice rather than hardcoded, so
+    adding a choice on the instance is enough to make it writable here.
+
+    Cached for the process, since the choice list changes only when an instance is
+    being set up.
+    """
+    global _subcategory_choices
+    if _subcategory_choices is not None and not refresh:
+        return _subcategory_choices
+    try:
+        rows = _table_get("sys_choice", {
+            "sysparm_query": "name=incident^element=subcategory^inactive=false",
+            "sysparm_fields": "value,dependent_value",
+            "sysparm_limit": 500,
+        })
+        _subcategory_choices = {r["value"]: r.get("dependent_value", "")
+                                for r in rows if r.get("value")}
+    except Exception as e:
+        print(f"[SN] could not read the subcategory choice list ({type(e).__name__}); "
+              f"new tickets will be created unclassified.")
+        _subcategory_choices = {}
+    return _subcategory_choices
+
+
+def classify(issue_type: str) -> dict:
+    """{'category': ..., 'subcategory': ...} for an issue type, or {} when the
+    instance has no such choice. Writing an unknown value would be dropped without
+    an error, so it is not attempted."""
+    value = (issue_type or "").strip()
+    if not value:
+        return {}
+    choices = subcategory_choices()
+    for known, dependent in choices.items():
+        if known.strip().lower() == value.lower():
+            return ({"category": dependent, "subcategory": known} if dependent
+                    else {"subcategory": known})
+    return {}
 
 
 def find_group(name: str) -> dict | None:
@@ -658,7 +716,43 @@ def fetch_group_tickets(group: str) -> list:
     return [parse_ticket(r) for r in rows]
 
 
+# The knowledge base is drawn from more than one group. The two demo domains are
+# kept in SEPARATE ServiceNow groups so they stay distinguishable in the UI, but
+# both are searchable, so the reader spans them.
+SUPPORT_GROUP = os.getenv("SERVICENOW_SUPPORT_GROUP",
+                          "BUS Sales Ordering and Digital Support").strip()
+
+
+def kb_groups() -> list:
+    """The assignment groups whose closed incidents form the knowledge base."""
+    return [g for g in (DEMO_GROUP, SUPPORT_GROUP) if g]
+
+
 def fetch_demo_closed_kb() -> list:
-    """Closed incidents in the demo group: the knowledge base when KB_SOURCE is
-    'servicenow'. Seeded by backend/seed_demo_tickets.py."""
-    return [t for t in fetch_group_tickets(DEMO_GROUP) if t["is_closed"]]
+    """Closed incidents across every knowledge-base group, when KB_SOURCE is
+    'servicenow'. Seeded by seed_demo_tickets.py and seed_support_tickets.py.
+
+    A group that cannot be read is skipped with a warning rather than failing the
+    whole load, so one empty or missing group does not take the KB down with it.
+    """
+    out, seen = [], set()
+    for group in kb_groups():
+        try:
+            tickets = fetch_group_tickets(group)
+        except Exception as e:
+            print(f"[WARN] KB group {group!r} unreadable ({type(e).__name__}); skipping.")
+            continue
+        closed = [t for t in tickets if t["is_closed"]]
+        print(f"[FALLOUT-KB] group {group!r}: {len(closed)} closed")
+        for t in closed:
+            # Incident numbers are unique across the instance, but guard anyway so a
+            # ticket sitting in two groups cannot be indexed twice.
+            if t["number"] not in seen:
+                seen.add(t["number"])
+                # Stamp the owning group onto the ticket. This is what the chat reads
+                # back after retrieval to decide where a NEW ticket should be filed,
+                # so a Business Hub question does not raise its ticket in the modem
+                # queue. Nothing else uses it.
+                t["kb_group"] = group
+                out.append(t)
+    return out

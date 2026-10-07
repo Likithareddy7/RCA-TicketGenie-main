@@ -165,11 +165,108 @@ knowledge base has no answer.
 * `assignment_group` is read back after the write, because ServiceNow silently
   **drops** a group name it cannot resolve. Without the read-back a typo produces an
   unassigned ticket that looks like a success.
-* Creation defaults to `SERVICENOW_DEMO_GROUP`, so a bug cannot spray tickets into a
-  live queue.
+* Creation falls back to `SERVICENOW_DEMO_GROUP` whenever a group cannot be derived,
+  so a bug cannot spray tickets into a live queue.
+
+### Which group a new ticket is filed in
+
+The knowledge base spans more than one ServiceNow group, so a new ticket is filed
+next to the tickets that answered it. Without this, a Business Hub question answered
+from the support knowledge base raised its ticket in the modem queue.
+
+`_ticket_group()` in `fallout_engine.py` decides, and three things about it are
+deliberate:
+
+* **The group comes from the single best-matching ticket, not a majority of the
+  matches.** Both rules were measured over 20 phrasings. They disagree on two, "the
+  caller ID is showing the wrong name" and "I returned a VOIP phone but I am still
+  being charged", and on both the top match is the correct one while a majority vote
+  files the ticket in the wrong group. Each ticket carries its owning group as
+  `kb_group` in Chroma metadata, stamped in `fetch_demo_closed_kb()`.
+* **Routing reads the ticket's own short description**, padding a terse one with the
+  customer's opening message. It must *not* reuse `_retrieval_query()`: by the time a
+  ticket is confirmed the latest message is a block of contact details, and the first
+  version of this function pulled names, account numbers and email addresses into the
+  retrieval query. That was caught by the stubbed test for the no-match fallback,
+  which is the only case where the noise changed the answer.
+* **The group is re-derived server side**, never carried by the client, for the same
+  reason validation re-runs on confirm. A tampered client must not pick the queue.
+
+When nothing clears `SEARCH_MIN_SIM` there is no matched ticket to learn from, so the
+ticket goes to `SERVICENOW_DEMO_GROUP`. Those are exactly the tickets a human has to
+triage from scratch, and the product owner chose to keep them in the group already
+being watched rather than mixing them into the support queue.
+
+`kb_group` is part of the `_doc_hash()` basis, so moving a ticket between groups
+re-upserts it and the routing metadata follows. Adding the field forced a one-time
+re-upsert of all 70 tickets, which is how the metadata was populated without
+deleting `data/chroma_db/`.
+
+The group is **not** shown in the UI. It is an internal queue name, so it only
+appears in the backend log line `[CHAT] routing new ticket to '<group>' (top match
+<incident> at <score>)`.
 
 **Required fields** live in one place, `REQUIRED_TICKET_FIELDS` in
-`fallout_engine.py`.
+`fallout_engine.py`. Six fields: a short description, four personal details, and the
+type of issue.
+
+### Type of issue, derived from the knowledge base
+
+The field used to be "Which service is affected", filled by keyword matching into
+`internet` / `phone` / `both`. It is now **"Type of issue"**, and the value is the
+issue type recorded on the closed ticket that best matches what the customer wrote.
+It uses the same `_best_kb_match()` helper as group routing, so the two can never
+disagree about which ticket a new one is modelled on.
+
+The KB holds **18 issue types**, and they are what `subcategory` already means in
+Chroma metadata for both groups:
+
+* 4 from the modem/voice tickets: Modem Connectivity, Modem Stability, Voice Quality,
+  Voice Line Activation
+* 14 from the Business Hub tickets: Access/Login/Permission Issue, Billing Issue,
+  Order Issue, Configuration Issue, Data Issue, Application Issue, Customer Account
+  Issue, Disconnecting a Customer/Service Issue, Plan Change Issue, Functionality
+  Issue, Order Fallout, Error Message, Disconnected but Billed, Other
+
+**The customer is never asked for it.** Those 18 are internal classification labels,
+so putting that list to a subscriber would be nonsense. It therefore never blocks
+creation: when nothing clears `SEARCH_MIN_SIM` it reads `ISSUE_TYPE_UNKNOWN`, which
+is the literal string "Not yet classified", chosen by the product owner over hiding
+the row so the ticket tells the team that triage is outstanding. A value the customer
+labels themselves still wins, as with every other field.
+
+### Writing the classification to ServiceNow
+
+The derived type is written to the incident's native `subcategory`, so a ticket lands
+classified rather than needing a human to set it. Two instance facts make this
+less simple than it sounds, and both are read from `sys_choice` rather than hardcoded:
+
+* **ServiceNow silently drops a subcategory that is not in the choice list.** No 400,
+  no error, the field is just empty afterwards. So `classify()` writes a value only
+  when the instance actually has that choice, and `create_incident` reads
+  `subcategory` back and warns when it did not stick, exactly as it already does for
+  `assignment_group`.
+* **Subcategory is a dependent choice**, so a value only resolves under its own
+  category. `classify()` therefore returns the choice's own `dependent_value` as the
+  category rather than assuming one. The two groups genuinely differ: the Business Hub
+  tickets sit under `Marketing, Sales & Billing Applications`, the modem/voice tickets
+  under `inquiry` (displayed "Inquiry / Help").
+
+The 14 Business Hub types were already valid choices from the seeding work. The 4
+modem/voice types were **not**, and were added as choices dependent on `inquiry`.
+Without that, a modem ticket's classification would have been dropped silently while
+a Hub ticket's stuck, which is the kind of split behaviour that is painful to debug.
+
+Verified live, both directions, by reading the created incidents back out of the
+instance:
+
+```
+INC0010078  New  BUS Sales Ordering and Digital Support  Marketing, Sales & Billing Applications  Access/Login/Permission Issue
+INC0010079  New  TICKETGENIE DEMO                        Inquiry / Help                           Modem Connectivity
+```
+
+In the ticket description the type of issue gets **its own line**, not a row under
+`Contact details:`, because it is a classification rather than a contact detail.
 
 `discover_required_fields.py` was run against `dev449716` and found that **ServiceNow
 itself requires nothing at create time**: no dictionary-mandatory fields on `incident`
@@ -178,7 +275,7 @@ resolved or closed", which applies to REST and requires `close_code` and `close_
 but only when a ticket is being closed. `seed_demo_tickets.py` already sends both when
 it closes the seeded tickets.
 
-So the seven fields the chat collects are a **business choice, not a ServiceNow
+So the six fields the chat shows are a **business choice, not a ServiceNow
 constraint**, and the list can be trimmed freely. Re-run the script against any new
 instance before assuming this still holds. It reads both `sys_dictionary` (`mandatory=true`) and `sys_data_policy2`,
 because **data policies are enforced on REST inserts** while UI policies are not, so
@@ -201,8 +298,10 @@ task types.
 
 * `spreadsheet` (default) reads the file pinned by `KB_EXCEL_PATH`. Works with no
   ServiceNow instance at all.
-* `servicenow` reads closed incidents in `SERVICENOW_DEMO_GROUP`, so what is visible
-  in the ServiceNow UI is literally what gets searched.
+* `servicenow` reads closed incidents in every group `kb_groups()` returns
+  (`SERVICENOW_DEMO_GROUP` and `SERVICENOW_SUPPORT_GROUP`), so what is visible in the
+  ServiceNow UI is literally what gets searched. Each ticket keeps its owning group
+  as `kb_group`, which is what new-ticket routing reads.
 
 When `servicenow` is selected but the instance cannot be read, it **falls back to the
 spreadsheet** rather than serving an empty KB. That is deliberate: an unreachable
@@ -364,7 +463,8 @@ Then set `KB_SOURCE=servicenow` to read the KB live from the instance.
 | `SERVICENOW_USER` / `SERVICENOW_PASSWORD` | ServiceNow account, used by both auth modes |
 | `SERVICENOW_CLIENT_ID` / `SERVICENOW_CLIENT_SECRET` | OAuth client, **preferred**; unset both to fall back to Basic |
 | `SERVICENOW_QUEUE_GROUP` | assignment group forming the internal queue |
-| `SERVICENOW_DEMO_GROUP` | group for the demo tickets and for tickets the chat creates |
+| `SERVICENOW_DEMO_GROUP` | group for the 18 modem/voice demo tickets, and the fallback when a new ticket's group cannot be derived |
+| `SERVICENOW_SUPPORT_GROUP` | group for the Business Hub support tickets. Both groups are read into the KB by `kb_groups()` |
 | `KB_SOURCE` | `spreadsheet` or `servicenow` |
 | `KB_EXCEL_PATH` | the KB spreadsheet when `KB_SOURCE=spreadsheet` |
 | `KB_EXCEL_SHEET` | optional sheet name |
@@ -405,9 +505,11 @@ Dry tests are run against stubs, so nothing is written to any external system.
 
 **Ticket creation flow, 28 assertions, all passing:**
 
-* `open_ticket` lists all 7 required fields and creates nothing.
+* `open_ticket` asks for the 4 personal details and creates nothing. The short
+  description comes from the customer's own words and the type of issue is derived,
+  so neither is asked for.
 * Partial details produce `ticket_missing` naming **exactly** the outstanding fields,
-  and no email, phone, or affected service is invented.
+  and no email or phone is invented.
 * Confirming while incomplete is **blocked** and creates nothing.
 * The review stage shows all fields and still creates nothing.
 * Confirm creates **exactly one** incident, with `short_description` set to the

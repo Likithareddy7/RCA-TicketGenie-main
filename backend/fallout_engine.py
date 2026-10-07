@@ -921,8 +921,12 @@ REQUIRED_TICKET_FIELDS = [
     {"key": "account_number", "label": "Your account number", "hint": None, "sn_field": None},
     {"key": "contact_phone", "label": "A contact phone number", "hint": None, "sn_field": None},
     {"key": "contact_email", "label": "A contact email address", "hint": None, "sn_field": None},
-    {"key": "service_affected", "label": "Which service is affected",
-     "hint": "internet, phone, or both", "sn_field": None},
+    # Derived from the knowledge base, never asked for: the 18 values are internal
+    # classification labels, so putting that list to a customer would be nonsense.
+    # It is still shown in the review table, where they can correct it before
+    # anything is raised.
+    {"key": "issue_type", "label": "Type of issue",
+     "hint": None, "sn_field": "subcategory"},
 ]
 
 _FIELD_BY_KEY = {f["key"]: f for f in REQUIRED_TICKET_FIELDS}
@@ -971,8 +975,8 @@ def _extract_labelled(messages: list) -> dict:
             keys |= {"phone", "phone number", "contact number", "mobile", "telephone"}
         if f["key"] == "contact_email":
             keys |= {"email", "email address", "e-mail"}
-        if f["key"] == "service_affected":
-            keys |= {"service", "affected service"}
+        if f["key"] == "issue_type":
+            keys |= {"issue type", "issue", "type"}
         for k in keys:
             aliases[k] = f["key"]
 
@@ -1011,40 +1015,59 @@ def _extract_with_model(messages: list) -> dict:
     return out
 
 
-# Which service a problem is about, worked out from the customer's own words rather
-# than asked for. "my modem has a red light" is plainly an internet problem, and
-# making someone answer a question they have already answered is friction.
+# What KIND of problem this is, taken from the knowledge base rather than asked for.
 #
-# This is a DERIVATION, not an assumption: it only ever fires on words the customer
-# actually wrote, it only fills the field when nothing else supplied it, and it is
-# shown in the review table so they can correct it before anything is raised. Where
-# a problem mentions both sides, it says "both" rather than picking one.
-_INTERNET_WORDS = (
-    "modem", "internet", "wifi", "wi-fi", "broadband", "router", "online",
-    "website", "web site", "browsing", "speed", "data", "connection drop",
-    "no connection", "wan", "ethernet", "hub",
-)
-_PHONE_WORDS = (
-    "phone", "dial tone", "dialtone", "call", "calls", "calling", "voice",
-    "handset", "landline", "busy signal", "ring", "voicemail", "echo",
-    "audio", "caller", "hang up", "hung up",
-)
+# This is a DERIVATION, not an assumption: the value is the issue type recorded on the
+# closed ticket that best matches what the customer actually wrote, it only fills the
+# field when nothing else supplied it, and it is shown in the review table so they can
+# correct it before anything is raised. When nothing matches there is nothing to copy,
+# so it says so plainly instead of guessing.
+ISSUE_TYPE_UNKNOWN = "Not yet classified"
 
 
-def _infer_service(messages: list, short_description: str = "") -> str:
-    """'internet', 'phone', 'both', or '' when the words do not say."""
-    text = " ".join([short_description] + _user_messages(messages)).lower()
-    if not text.strip():
+def _best_kb_match(fields: dict, messages: list):
+    """The single closest closed ticket, or None when nothing clears the floor.
+
+    Reads the ticket's own short description, padding a terse one with the customer's
+    opening message. It deliberately does NOT reuse _retrieval_query(): by the time a
+    ticket is confirmed the latest message is a block of contact details, and feeding
+    names, account numbers and email addresses into the query is noise at best.
+
+    Shared by issue-type derivation and group routing so the two can never disagree
+    about which ticket a new one is modelled on.
+    """
+    query = str((fields or {}).get("short_description", "") or "").strip()
+    first = ""
+    for m in (messages or []):
+        if m.get("role") == "user" and str(m.get("content", "")).strip():
+            first = str(m["content"]).strip()
+            break
+    if not query:
+        query = first
+    elif len(query.split()) < 6 and first and first != query:
+        query = f"{query} {first}"
+    if not query:
+        return None
+
+    try:
+        results = fallout_store.search(query, k=3)
+    except Exception as e:
+        print(f"[CHAT] KB match for ticket metadata failed: {e}")
+        return None
+    usable = [r for r in results if r["similarity"] >= SEARCH_MIN_SIM]
+    return usable[0] if usable else None
+
+
+def _derive_issue_type(fields: dict, messages: list) -> str:
+    """The matched ticket's own issue type, or "" when nothing matched."""
+    top = _best_kb_match(fields, messages)
+    if not top:
         return ""
-    net = any(w in text for w in _INTERNET_WORDS)
-    voice = any(w in text for w in _PHONE_WORDS)
-    if net and voice:
-        return "both"
-    if net:
-        return "internet"
-    if voice:
-        return "phone"
-    return ""
+    issue = str(top["metadata"].get("subcategory", "") or "").strip()
+    if issue:
+        print(f"[CHAT] issue type {issue!r} from {top['metadata'].get('number', '')} "
+              f"at {top['similarity']:.3f}")
+    return issue
 
 
 def extract_ticket_fields(messages: list, known: dict = None) -> tuple:
@@ -1095,12 +1118,13 @@ def extract_ticket_fields(messages: list, known: dict = None) -> tuple:
     fields.update(from_model)
     fields.update(latest_labelled)
 
-    # Last resort for the affected service only: derive it from what the customer
-    # described. Runs after everything else, so an explicit answer always wins.
-    if not fields.get("service_affected"):
-        derived = _infer_service(messages, fields.get("short_description", ""))
-        if derived:
-            fields["service_affected"] = derived
+    # The issue type is the one field taken from the knowledge base rather than from
+    # the customer. Runs after everything else, so a value they stated themselves
+    # always wins, and it never blocks: an unmatched problem is labelled as unclassified
+    # rather than put to the customer as a choice of 18 internal categories.
+    if not fields.get("issue_type"):
+        fields["issue_type"] = (_derive_issue_type(fields, messages)
+                                or ISSUE_TYPE_UNKNOWN)
 
     missing = [f["key"] for f in REQUIRED_TICKET_FIELDS if not fields.get(f["key"])]
     return fields, missing
@@ -1159,9 +1183,15 @@ def build_incident_payload(fields: dict, tried_steps: list = None,
         body += [f"  {i}. {t}" for i, t in enumerate(suggested, 1)]
         body += [""]
 
+    # The issue type is a classification, not a contact detail, so it gets its own
+    # line rather than sitting under the Contact details heading.
+    issue = str(fields.get("issue_type", "") or "").strip()
+    if issue:
+        body += [f"Type of issue: {issue}", ""]
+
     contact = []
     for f in REQUIRED_TICKET_FIELDS:
-        if f["key"] == "short_description":
+        if f["key"] in ("short_description", "issue_type"):
             continue
         val = fields.get(f["key"], "")
         if val:
@@ -1173,7 +1203,46 @@ def build_incident_payload(fields: dict, tried_steps: list = None,
     # problem, and parse_ticket() falls back to synthesising a block from the native
     # description field for tickets that have no labelled journal entry, so nothing
     # downstream needs the duplicate.
-    return {"short_description": problem, "description": "\n".join(body).rstrip()}
+    # The native category/subcategory pair, but only when the instance actually has a
+    # choice for this issue type: ServiceNow drops an unknown subcategory silently, so
+    # writing a guess would look like a success and classify nothing.
+    extra = {}
+    if issue and issue != ISSUE_TYPE_UNKNOWN:
+        extra = servicenow_client.classify(issue)
+
+    return {"short_description": problem, "description": "\n".join(body).rstrip(),
+            "extra": extra}
+
+
+def _ticket_group(fields: dict, messages: list) -> str:
+    """Which ServiceNow group a new ticket belongs in.
+
+    The knowledge base spans more than one group, so a ticket is filed next to the
+    tickets that answered it. Without this, a Business Hub question answered from the
+    support knowledge base raised its ticket in the modem queue.
+
+    The group comes from the single best-matching ticket rather than a majority of the
+    matches, which was measured: on the two queries where the two rules disagree the
+    top match is the correct one both times, and a majority vote files the ticket in
+    the wrong group.
+
+    Re-derived here rather than carried by the client, for the same reason validation
+    re-runs on confirm and /fallout/approve re-derives its reassignment target: a
+    stale or tampered client must not choose the queue.
+
+    When nothing clears the relevance floor there is no matched ticket to learn from,
+    so this returns "" and create_incident falls back to the demo group. Those are the
+    tickets a human has to triage from scratch, and they stay where they can be seen.
+    """
+    top = _best_kb_match(fields, messages)
+    if not top:
+        print("[CHAT] no match above the floor; filing the ticket in the default group")
+        return ""
+    group = str(top["metadata"].get("kb_group", "") or "").strip()
+    if group:
+        print(f"[CHAT] routing new ticket to {group!r} "
+              f"(top match {top['metadata'].get('number', '')} at {top['similarity']:.3f})")
+    return group
 
 
 def _ticket_flow(messages: list, action: str, tried_steps: list = None,
@@ -1224,6 +1293,8 @@ def _ticket_flow(messages: list, action: str, tried_steps: list = None,
         created = servicenow_client.create_incident(
             short_description=payload["short_description"],
             description=payload["description"],
+            assignment_group=_ticket_group(fields, messages),
+            extra=payload.get("extra") or {},
         )
     except Exception as e:
         print(f"[CHAT] incident creation failed: {e}")

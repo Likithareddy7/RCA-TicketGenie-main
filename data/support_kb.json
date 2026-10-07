@@ -1,0 +1,522 @@
+[
+  {
+    "number":"INC0463845",
+    "state":"Closed",
+    "short_description":"Small Business account",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"per HUB IT: Account was migrated and is available in the Business HUB. A new invite was sent to the email address on the account {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 26 incident(s) in the export, for example INC0463845, INC0463131, INC0461967."
+  },
+  {
+    "number":"INC0458592",
+    "state":"Closed",
+    "short_description":"Session expired error immediately after login",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Please advise the user: clear browsing history, try an incognito window. This error displays if accessing from outside the US. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 30 incident(s) in the export, for example INC0458592, INC0457081, INC0464012."
+  },
+  {
+    "number":"INC0465101",
+    "state":"Closed",
+    "short_description":"Discount no longer applied to customer",
+    "description":"Billing Issue",
+    "u_issue_type":"Billing Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: MTM Discount does not extend past one year. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 8 incident(s) in the export, for example INC0465101, INC0462798, INC0460607."
+  },
+  {
+    "number":"INC0463609",
+    "state":"Closed",
+    "short_description":"An account could not be found for the provided user id",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"per HUB IT: Account was migrated and is available in the Business HUB. A new invite was sent to the email address on the account {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 41 incident(s) in the export, for example INC0463609, INC0461300, INC0461239."
+  },
+  {
+    "number":"INC0456444",
+    "state":"Closed",
+    "short_description":"Customer cannot sign in to the Business Hub since account was created",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Everything looks good on our end. The user completed their profile. If they still can't log in, ask the user to clear browser cache and try an incognito window. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 33 incident(s) in the export, for example INC0456444, INC0455018, INC0472669."
+  },
+  {
+    "number":"INC0465276",
+    "state":"Closed",
+    "short_description":"Small Business account",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"This BAN is now available in the HUB for this user. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 6 incident(s) in the export, for example INC0465276, INC0472332, INC0471635."
+  },
+  {
+    "number":"INC0464810",
+    "state":"Closed",
+    "short_description":"Please re-enable create billing option for Order ID",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Per IT - Account setup has not been completed for this order. Account setup must be done before billing. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 4 incident(s) in the export, for example INC0464810, INC0472130, INC0473033."
+  },
+  {
+    "number":"INC0458349",
+    "state":"Closed",
+    "short_description":"Unable to process Premium Fiber MTM",
+    "description":"Order Issue",
+    "u_issue_type":"Order Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: MTM is not available for Premium Fiber. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 9 incident(s) in the export, for example INC0458349, INC0467535, INC0462361."
+  },
+  {
+    "number":"INC0456180",
+    "state":"Closed",
+    "short_description":"Trying to upgrade to 2G on BAN but no speeds available at location",
+    "description":"Order Issue",
+    "u_issue_type":"Order Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"UE - Service Qualification. Per IT: No speeds returned from qualification for this address. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 8 incident(s) in the export, for example INC0456180, INC0465688, INC0462457."
+  },
+  {
+    "number":"INC0462962",
+    "state":"Closed",
+    "short_description":"User locked out of Hub after password reset",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Account unlocks automatically after 30 minutes. Advised user to use 'Forgot Password' link once. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 26 incident(s) in the export, for example INC0462962, INC0472671, INC0462540."
+  },
+  {
+    "number":"INC0465336",
+    "state":"Closed",
+    "short_description":"Unable to add additional admin user to Hub profile",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Only the primary admin can invite additional admins under User Management. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 31 incident(s) in the export, for example INC0465336, INC0472661, INC0470488."
+  },
+  {
+    "number":"INC0470947",
+    "state":"Closed",
+    "short_description":"No Welcome email",
+    "description":"Configuration Issue",
+    "u_issue_type":"Configuration Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"per HUB IT: Welcome email resent; user must check spam folder. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 12 incident(s) in the export, for example INC0470947, INC0459286, INC0457279."
+  },
+  {
+    "number":"INC0459170",
+    "state":"Closed",
+    "short_description":"No access to the business portal.",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"This BAN is now available in the HUB for this user. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 6 incident(s) in the export, for example INC0459170, INC0462186, INC0462745."
+  },
+  {
+    "number":"INC0469857",
+    "state":"Closed",
+    "short_description":"Customer not receiving verification codes",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"No response from user after 3 follow-up attempts. Closing ticket. {RCA TAG : Resolved - No response from User}",
+    "comments_and_work_notes":"Resolution code: Resolved - No response from User. Seen on 1 incident(s) in the export, for example INC0469857."
+  },
+  {
+    "number":"INC0473881",
+    "state":"Closed",
+    "short_description":"No access to the business portal.",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"**MIGRATED TICKET FROM MASS MARKET SIDE TO HUB PORTAL** The user is now set up in the HUB Portal and is able to view their account. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 38 incident(s) in the export, for example INC0473881, INC0457625, INC0457806."
+  },
+  {
+    "number":"INC0464482",
+    "state":"Closed",
+    "short_description":"Customer not receiving verification codes",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"I disabled the account-based user. Please try again; the user should now be able to access the account. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 7 incident(s) in the export, for example INC0464482, INC0471758, INC0457292."
+  },
+  {
+    "number":"INC0457400",
+    "state":"Closed",
+    "short_description":"Customer not receiving verification codes",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"per HUB IT: User is pending acceptance of T&C. User needs to accept T&C to receive the verification code. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 28 incident(s) in the export, for example INC0457400, INC0456041, INC0467433."
+  },
+  {
+    "number":"INC0463067",
+    "state":"Closed",
+    "short_description":"AMS ID is not pulling address in SNOW",
+    "description":"Application Issue",
+    "u_issue_type":"Application Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Per IT - Zipcode was incorrectly entered; please retry with a valid zipcode. Screenshot attached. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 4 incident(s) in the export, for example INC0463067, INC0468746, INC0469358."
+  },
+  {
+    "number":"INC0465559",
+    "state":"Closed",
+    "short_description":"Caller ID incorrect name displayed",
+    "description":"Plan Change Issue",
+    "u_issue_type":"Plan Change Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"UE - Caller ID. Per IT: Change order was performed incorrectly, which is why Caller ID was not updated. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 6 incident(s) in the export, for example INC0465559, INC0471477, INC0469038."
+  },
+  {
+    "number":"INC0459400",
+    "state":"Closed",
+    "short_description":"County SSR account no billing found when I click disconnect",
+    "description":"Disconnecting a Customer\/Service Issue",
+    "u_issue_type":"Disconnecting a Customer\/Service Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Confirmed user placed disco order. User education. Will monitor. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 3 incident(s) in the export, for example INC0459400, INC0470574, INC0462362."
+  },
+  {
+    "number":"INC0468056",
+    "state":"Closed",
+    "short_description":"Customer gets 'no ID for the provided email could be found' when logging in",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Customer was using the residential portal. Directed to the Business Hub login page. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 27 incident(s) in the export, for example INC0468056, INC0464347, INC0465295."
+  },
+  {
+    "number":"INC0458779",
+    "state":"Closed",
+    "short_description":"UPDATE PACKAGE TYPE TO ADVANCED",
+    "description":"Data Issue",
+    "u_issue_type":"Data Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Changing from Enhanced to Advanced requires an upgrade of the primary site. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 4 incident(s) in the export, for example INC0458779, INC0465134, INC0466934."
+  },
+  {
+    "number":"INC0473893",
+    "state":"Closed",
+    "short_description":"upgrade to 2G not allowed, shows no packages available",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education - the agent removed the term from the quote, which prevented selecting new products. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 9 incident(s) in the export, for example INC0473893, INC0462757, INC0460182."
+  },
+  {
+    "number":"INC0462223",
+    "state":"Closed",
+    "short_description":"Change Billing says no product found",
+    "description":"Application Issue",
+    "u_issue_type":"Application Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Per IT - The given the BAN provided does not have contracts. Please correct to a valid BAN and try again. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 8 incident(s) in the export, for example INC0462223, INC0471847, INC0471640."
+  },
+  {
+    "number":"INC0461456",
+    "state":"Closed",
+    "short_description":"Phone disconnected by mistake",
+    "description":"Order Issue",
+    "u_issue_type":"Order Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Resolved per the notes - unclear how disconnect was initiated; service was restored. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 5 incident(s) in the export, for example INC0461456, INC0467504, INC0458358."
+  },
+  {
+    "number":"INC0461887",
+    "state":"Closed",
+    "short_description":"Returned VOIP phone still being charged",
+    "description":"Billing Issue",
+    "u_issue_type":"Billing Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Devices cannot be removed unless returned within 30 days in new condition. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 7 incident(s) in the export, for example INC0461887, INC0469288, INC0455116."
+  },
+  {
+    "number":"INC0474626",
+    "state":"Closed",
+    "short_description":"can not download invoice",
+    "description":"Billing Issue",
+    "u_issue_type":"Billing Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"IT was able to download. Advise customer to clear browsing history. Invoice attached. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 5 incident(s) in the export, for example INC0474626, INC0472573, INC0463147."
+  },
+  {
+    "number":"INC0455689",
+    "state":"Closed",
+    "short_description":"Unable to reschedule wholesale orders in CPQ",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education - Wholesale rescheduling automation. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 6 incident(s) in the export, for example INC0455689, INC0459340, INC0457339."
+  },
+  {
+    "number":"INC0458486",
+    "state":"Closed",
+    "short_description":"Customer wants to disconnect Inside Wire Protection and Business Voicemail",
+    "description":"Customer Account Issue",
+    "u_issue_type":"Customer Account Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"UE - MAC Process. Per IT: Deactivate features in service location, do not remove them. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 10 incident(s) in the export, for example INC0458486, INC0461913, INC0458782."
+  },
+  {
+    "number":"INC0472290",
+    "state":"Closed",
+    "short_description":"Link account to customer business hub",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Customer can add the BAN themselves under My Profile > Linked Accounts. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 21 incident(s) in the export, for example INC0472290, INC0468833, INC0460560."
+  },
+  {
+    "number":"INC0464861",
+    "state":"Closed",
+    "short_description":"Unable to add Voice+ service - N\/A",
+    "description":"Order Issue",
+    "u_issue_type":"Order Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education - BrightQuote is only available for fiber orders. Add Voice+ in CPQ once done with the fiber portion. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 5 incident(s) in the export, for example INC0464861, INC0463667, INC0463742."
+  },
+  {
+    "number":"INC0473394",
+    "state":"Closed",
+    "short_description":"Profile tab shows wrong BAN numbers",
+    "description":"Application Issue",
+    "u_issue_type":"Application Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"per HUB IT: User was looking at User Management; account details display under My Accounts. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 1 incident(s) in the export, for example INC0473394."
+  },
+  {
+    "number":"INC0472856",
+    "state":"Closed",
+    "short_description":"UI not advancing to create order package in - pls advise",
+    "description":"Functionality Issue",
+    "u_issue_type":"Functionality Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education - LOA - Wrong file type name used. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 5 incident(s) in the export, for example INC0472856, INC0462002, INC0457848."
+  },
+  {
+    "number":"INC0457582",
+    "state":"Closed",
+    "short_description":"County SSR account is not billing for services",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Closing with notes from IT: The service has a promo applied per the contract (see attachment). Billing will start after promo period. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 4 incident(s) in the export, for example INC0457582, INC0461525, INC0469083."
+  },
+  {
+    "number":"INC0465983",
+    "state":"Closed",
+    "short_description":"Change of Ownership order does not carry over Circuit ID from old BAN to new",
+    "description":"Order Fallout",
+    "u_issue_type":"Order Fallout",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: DIA changes cannot be submitted through BOSS OM. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 3 incident(s) in the export, for example INC0465983, INC0463698, INC0464129."
+  },
+  {
+    "number":"INC0467423",
+    "state":"Closed",
+    "short_description":"Please re-enable create billing option for Order ID",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Billing option re-enabled for the order. Please retry. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 1 incident(s) in the export, for example INC0467423."
+  },
+  {
+    "number":"INC0466948",
+    "state":"Closed",
+    "short_description":"Quote reference",
+    "description":"Data Issue",
+    "u_issue_type":"Data Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education - Service type was not selected. Once selected, caller was able to continue. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 5 incident(s) in the export, for example INC0466948, INC0456307, INC0471576."
+  },
+  {
+    "number":"INC0468074",
+    "state":"Closed",
+    "short_description":"ADD BAN TO HUB PROFILE",
+    "description":"Configuration Issue",
+    "u_issue_type":"Configuration Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Customer can add BANs under My Profile > Linked Accounts. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 6 incident(s) in the export, for example INC0468074, INC0466894, INC0474142."
+  },
+  {
+    "number":"INC0462501",
+    "state":"Closed",
+    "short_description":"Customer gets 'no ID for the provided email could be found' when logging in",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"The BAN is now available in the HUB for this user. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 6 incident(s) in the export, for example INC0462501, INC0467098, INC0455212."
+  },
+  {
+    "number":"INC0461089",
+    "state":"Closed",
+    "short_description":"UPDATE PACKAGE TYPE TO ADVANCED",
+    "description":"Data Issue",
+    "u_issue_type":"Data Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"No response from user after 3 follow-up attempts. Closing ticket. {RCA TAG : Resolved - No response from User}",
+    "comments_and_work_notes":"Resolution code: Resolved - No response from User. Seen on 1 incident(s) in the export, for example INC0461089."
+  },
+  {
+    "number":"INC0456302",
+    "state":"Closed",
+    "short_description":"Fiber order cannot be placed at this address, pending fiber disconnect order exists",
+    "description":"Error Message",
+    "u_issue_type":"Error Message",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Closing as SE is opening a case to get the site corrected. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 3 incident(s) in the export, for example INC0456302, INC0464779, INC0474087."
+  },
+  {
+    "number":"INC0463176",
+    "state":"Closed",
+    "short_description":"close account",
+    "description":"Disconnected but Billed",
+    "u_issue_type":"Disconnected but Billed",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"UE - Disconnect. Service is not inactive. IT provided a link to disconnect the services. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 3 incident(s) in the export, for example INC0463176, INC0461865, INC0467418."
+  },
+  {
+    "number":"INC0461222",
+    "state":"Closed",
+    "short_description":"Quote number is locked and cannot select Month to Month pricing",
+    "description":"Configuration Issue",
+    "u_issue_type":"Configuration Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: BrightQuote - Service was not selected prior to trying to select Term. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 6 incident(s) in the export, for example INC0461222, INC0468737, INC0457778."
+  },
+  {
+    "number":"INC0461278",
+    "state":"Closed",
+    "short_description":"Complete disconnection and stop billing",
+    "description":"Disconnecting a Customer\/Service Issue",
+    "u_issue_type":"Disconnecting a Customer\/Service Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"UE - Disconnect. Per IT: There is active service on the BAN; please perform disconnect action using the provided link. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 8 incident(s) in the export, for example INC0461278, INC0457168, INC0473089."
+  },
+  {
+    "number":"INC0466850",
+    "state":"Closed",
+    "short_description":"Property manager unable to view invoices in the HUB",
+    "description":"Customer Account Issue",
+    "u_issue_type":"Customer Account Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Property manager must be invited by the account admin. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 2 incident(s) in the export, for example INC0466850, INC0457226."
+  },
+  {
+    "number":"INC0458928",
+    "state":"Closed",
+    "short_description":"Phone disconnected by mistake",
+    "description":"Order Issue",
+    "u_issue_type":"Order Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Service restored per IT; order corrected. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 2 incident(s) in the export, for example INC0458928, INC0471561."
+  },
+  {
+    "number":"INC0460801",
+    "state":"Closed",
+    "short_description":"ADD BAN TO HUB PROFILE",
+    "description":"Configuration Issue",
+    "u_issue_type":"Configuration Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"Hello, this BAN is now part of this user in the HUB. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 1 incident(s) in the export, for example INC0460801."
+  },
+  {
+    "number":"INC0460410",
+    "state":"Closed",
+    "short_description":"Address qualifies for fiber",
+    "description":"Data Issue",
+    "u_issue_type":"Data Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"User Education: Requires structure load to enable, or proceed with copper. {RCA TAG : Resolved - User Education}",
+    "comments_and_work_notes":"Resolution code: Resolved - User Education. Seen on 3 incident(s) in the export, for example INC0460410, INC0457580, INC0456997."
+  },
+  {
+    "number":"INC0468317",
+    "state":"Closed",
+    "short_description":"User locked out of Hub after password reset",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"I disabled the account-based user. Please try again; the user should now be able to access the account. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 3 incident(s) in the export, for example INC0468317, INC0465000, INC0458056."
+  },
+  {
+    "number":"INC0459575",
+    "state":"Closed",
+    "short_description":"Customer cannot sign in to the Business Hub since account was created",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"No response from user after 3 follow-up attempts. Closing ticket. {RCA TAG : Resolved - No response from User}",
+    "comments_and_work_notes":"Resolution code: Resolved - No response from User. Seen on 1 incident(s) in the export, for example INC0459575."
+  },
+  {
+    "number":"INC0458309",
+    "state":"Closed",
+    "short_description":"Link account to customer business hub",
+    "description":"Access\/Login\/Permission Issue",
+    "u_issue_type":"Access\/Login\/Permission Issue",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"This billing account is now available for the user in the HUB. {RCA TAG : Resolved \u2013 Permanent Fix Applied}",
+    "comments_and_work_notes":"Resolution code: Resolved \u2013 Permanent Fix Applied. Seen on 1 incident(s) in the export, for example INC0458309."
+  },
+  {
+    "number":"INC0472571",
+    "state":"Closed",
+    "short_description":"Unable to reschedule wholesale orders in CPQ",
+    "description":"Other",
+    "u_issue_type":"Other",
+    "category":"Marketing, Sales & Billing Applications",
+    "close_notes":"No response from user after 3 follow-up attempts. Closing ticket. {RCA TAG : Resolved - No response from User}",
+    "comments_and_work_notes":"Resolution code: Resolved - No response from User. Seen on 1 incident(s) in the export, for example INC0472571."
+  }
+]
